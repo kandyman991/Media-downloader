@@ -16,7 +16,8 @@ Requires JDK 17, Android SDK platform/build-tools 35 and Gradle 8.11.1 (or Andro
 ### CI / zero Actions artifact uploads
 - Builds/tests on main, PRs and manual dispatch. These runs deliberately do not publish APK files.
 - No `actions/upload-artifact`, `actions/cache`, or Gradle Actions caches (`cache-disabled: true`).
-- Push a version tag (e.g. `v0.1.0`) to build and upload a debug APK **directly to GitHub Releases**. Releases are separate from Actions artifacts.
+- To publish a test APK without manually creating a tag, merge a change to `main` using a commit message containing `[apk]`. Only that push runs the APK publishing job. It builds/tests once and creates a `snapshot-<commit>` prerelease with the APK **directly in GitHub Releases**.
+- Version tags (e.g. `v0.1.0`) also build and upload a debug APK directly to GitHub Releases. Releases are separate from Actions artifacts.
 - Workflows still create GitHub Actions **logs**; set their retention to the minimum in repository Actions settings if needed.
 - Test APKs use ephemeral signing on hosted runners; for new versions, the previous debug build might have to be uninstalled. Stable signing is planned.
 

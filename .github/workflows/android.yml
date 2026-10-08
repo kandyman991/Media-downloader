@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !(github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --no-build-cache
 
   publish-test-apk:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -66,12 +66,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="snapshot-${GITHUB_SHA:0:12}"
+          fi
           apk="app/build/outputs/apk/debug/app-debug.apk"
           asset="StreamCatch-Android-${tag}-debug.apk"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${apk}#${asset}" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" "${apk}#${asset}" --repo "$GITHUB_REPOSITORY" \
+            gh release create "$tag" "${apk}#${asset}" --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
               --title "StreamCatch Android ${tag} (test APK)" --generate-notes --prerelease
           fi
