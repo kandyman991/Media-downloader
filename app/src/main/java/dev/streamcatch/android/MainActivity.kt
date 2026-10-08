@@ -77,7 +77,7 @@ class MainActivity : Activity() {
         toolbar.addView(btn("‹") { if (webView.canGoBack()) webView.goBack() }, LinearLayout.LayoutParams(54.dp, ViewGroup.LayoutParams.WRAP_CONTENT))
         address = EditText(this).apply {
             hint = "Enter a website URL"
-            singleLine = true
+            setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
             setSelectAllOnFocus(true)
             setOnEditorActionListener { _, _, _ -> navigate(text.toString()); true }
@@ -109,7 +109,7 @@ class MainActivity : Activity() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                     clearMedia()
                     address.setText(url.orEmpty())
-                    progress.progress = 0
+                    this@MainActivity.progress.progress = 0
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -126,7 +126,7 @@ class MainActivity : Activity() {
             }
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                    progress.progress = newProgress
+                    this@MainActivity.progress.progress = newProgress
                 }
             }
             setDownloadListener(DownloadListener { url, userAgent, _, mimeType, _ ->
