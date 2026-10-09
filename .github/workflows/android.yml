@@ -42,6 +42,23 @@ jobs:
           cache-disabled: true
       - name: Test and compile (no APK upload)
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --no-build-cache
+      - name: Smoke-test release signing with disposable CI-only key (never published)
+        shell: bash
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/disposable-ci-signing.p12"
+          keytool -genkeypair -storetype PKCS12 -keystore "$keyfile" \
+            -storepass "ci-temporary-strong-password" -keypass "ci-temporary-strong-password" \
+            -alias ci-disposable -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=CI Disposable, O=StreamCatch" >/dev/null
+          export STREAMCATCH_SIGNING_STORE_FILE="$keyfile"
+          export STREAMCATCH_SIGNING_PASSWORD="ci-temporary-strong-password"
+          export STREAMCATCH_SIGNING_ALIAS="ci-disposable"
+          gradle :app:assembleRelease --no-daemon --no-build-cache
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          "$SDK/build-tools/35.0.0/apksigner" verify \
+            "app/build/outputs/apk/release/app-release.apk"
+          rm -f "$keyfile"
 
   publish-signed-apk:
     if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_signed_apk) }}
@@ -114,4 +131,11 @@ jobs:
           else
             gh release create "$tag" "${apk}#${asset}" "${checksum}#${asset}.sha256" --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
               --title "StreamCatch Android ${tag} (signed test APK)" --generate-notes --prerelease
+      - name: Remove private signing material from runner
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${STREAMCATCH_SIGNING_STORE_FILE:-}" ]]; then
+            rm -f -- "$STREAMCATCH_SIGNING_STORE_FILE"
+          fi
           fi
