@@ -7,3 +7,12 @@ build/
 *.apk
 *.aab
 .DS_Store
+
+## Never commit private APK signing credentials
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+signing.properties
+.signing/
