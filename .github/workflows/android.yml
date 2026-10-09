@@ -6,6 +6,12 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_signed_apk:
+        description: 'Publish a signed APK to GitHub Releases (main branch only)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -16,7 +22,7 @@ concurrency:
 
 jobs:
   verify:
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !(github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !(github.event_name == 'workflow_dispatch' && inputs.publish_signed_apk) && !(github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,9 +42,26 @@ jobs:
           cache-disabled: true
       - name: Test and compile (no APK upload)
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --no-build-cache
+      - name: Smoke-test release signing with disposable CI-only key (never published)
+        shell: bash
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/disposable-ci-signing.p12"
+          keytool -genkeypair -storetype PKCS12 -keystore "$keyfile" \
+            -storepass "ci-temporary-strong-password" -keypass "ci-temporary-strong-password" \
+            -alias ci-disposable -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=CI Disposable, O=StreamCatch" >/dev/null
+          export STREAMCATCH_SIGNING_STORE_FILE="$keyfile"
+          export STREAMCATCH_SIGNING_PASSWORD="ci-temporary-strong-password"
+          export STREAMCATCH_SIGNING_ALIAS="ci-disposable"
+          gradle :app:assembleRelease --no-daemon --no-build-cache
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          "$SDK/build-tools/35.0.0/apksigner" verify \
+            "app/build/outputs/apk/release/app-release.apk"
+          rm -f "$keyfile"
 
-  publish-test-apk:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) }}
+  publish-signed-apk:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_signed_apk) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -58,9 +81,37 @@ jobs:
         with:
           gradle-version: '8.11.1'
           cache-disabled: true
-      - name: Test and compile test APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --no-build-cache
-      - name: Publish APK as GitHub Release asset (not Actions artifact)
+      - name: Prepare private signing keystore
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.STREAMCATCH_KEYSTORE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.STREAMCATCH_SIGNING_PASSWORD }}
+          SIGNING_ALIAS: ${{ secrets.STREAMCATCH_SIGNING_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_B64" || -z "$SIGNING_PASSWORD" || -z "$SIGNING_ALIAS" ]]; then
+            echo "::error::Stable Android signing is not configured. Run tools/configure-release-signing.sh on your trusted computer."
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/streamcatch-signing.p12"
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$keystore"
+          test -s "$keystore"
+          echo "STREAMCATCH_SIGNING_STORE_FILE=$keystore" >> "$GITHUB_ENV"
+      - name: Test and compile signed release APK
+        env:
+          STREAMCATCH_SIGNING_PASSWORD: ${{ secrets.STREAMCATCH_SIGNING_PASSWORD }}
+          STREAMCATCH_SIGNING_ALIAS: ${{ secrets.STREAMCATCH_SIGNING_ALIAS }}
+        run: gradle :app:testDebugUnitTest :app:assembleRelease --no-daemon --no-build-cache
+      - name: Verify signed APK and compute checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release.apk"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          "$SDK/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+          sha256sum "$apk" > "$RUNNER_TEMP/streamcatch-release.sha256"
+      - name: Publish signed APK as GitHub Release asset (not Actions artifact)
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -71,11 +122,20 @@ jobs:
           else
             tag="snapshot-${GITHUB_SHA:0:12}"
           fi
-          apk="app/build/outputs/apk/debug/app-debug.apk"
-          asset="StreamCatch-Android-${tag}-debug.apk"
+          apk="app/build/outputs/apk/release/app-release.apk"
+          asset="StreamCatch-Android-${tag}-signed.apk"
+          checksum="$RUNNER_TEMP/streamcatch-release.sha256"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${apk}#${asset}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$tag" "${checksum}#${asset}.sha256" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" "${apk}#${asset}" --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
-              --title "StreamCatch Android ${tag} (test APK)" --generate-notes --prerelease
+            gh release create "$tag" "${apk}#${asset}" "${checksum}#${asset}.sha256" --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+              --title "StreamCatch Android ${tag} (signed test APK)" --generate-notes --prerelease
+      - name: Remove private signing material from runner
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${STREAMCATCH_SIGNING_STORE_FILE:-}" ]]; then
+            rm -f -- "$STREAMCATCH_SIGNING_STORE_FILE"
+          fi
           fi
