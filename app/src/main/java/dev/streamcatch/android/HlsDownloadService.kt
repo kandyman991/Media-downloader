@@ -70,7 +70,7 @@ class HlsDownloadService : Service() {
             } finally {
                 active.set(false)
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelfResult(startId)
+                stopSelf()
             }
         }
         return START_NOT_STICKY
