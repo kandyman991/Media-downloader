@@ -22,13 +22,32 @@ Android-first video detector/downloader prototype. **Android 10+**, Kotlin, Andr
 ### Build
 Requires JDK 17, Android SDK platform/build-tools 35 and Gradle 8.11.1 (or Android Studio). Run `gradle :app:testDebugUnitTest :app:assembleDebug`. The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
 
+### Persistent signed APKs: in-place Android updates
+
+**Why v0.3.1 couldn't update:** Previous GitHub-hosted runs generated different ephemeral debug-signing certificates. Android requires the SAME application ID, signing certificate and a non-decreasing `versionCode` to install an update in place.
+
+**One-time local provisioning (Ubuntu / trusted computer):**
+
+1. Install Java keytool and GitHub CLI: `sudo apt install openjdk-21-jdk gh`.
+2. Authenticate: `gh auth login`.
+3. Run `bash tools/configure-release-signing.sh` from this repository. The script securely creates `~/.local/share/streamcatch/signing/streamcatch-release.p12` (reuses if present), uploads the key, alias and password as **GitHub repository Actions secrets**, then triggers one signed release build.
+4. Back up the entire keystore and its password privately (offline and password manager). **Never commit them to this public repository.**
+5. Download the newest **signed** APK from [GitHub Releases](https://github.com/kandyman991/Media-downloader/releases). **Uninstall the old debug-signed build one last time:** its lost/ephemeral signing key cannot be used to update it. Future signed APK releases made with this preserved key can update in place without uninstalling.
+
+If `gh auth login` asks for a browser, authenticate as the owner of this GitHub repository.
+
+To publish a new signed test APK after code is ready, use the GitHub Actions UI (**Android CI → Run workflow → publish_signed_apk: true** on the `main` branch), or merge a tested commit whose squash title includes `[apk]`.
+
+**Critical:** Version codes must increase with each genuine update. The first stable-signed version is `0.3.2` (code `4`); future versions must increment the integer in `app/build.gradle.kts`. Back up the keystore indefinitely. The app's `applicationId` must remain `dev.streamcatch.android`.
+
 ### CI / zero Actions artifact uploads
-- Builds/tests on main, PRs and manual dispatch. These runs deliberately do not publish APK files.
-- No `actions/upload-artifact`, `actions/cache`, or Gradle Actions caches (`cache-disabled: true`).
-- To publish a test APK without manually creating a tag, merge a change to `main` using a commit message containing `[apk]`. Only that push runs the APK publishing job. It builds/tests once and creates a `snapshot-<commit>` prerelease with the APK **directly in GitHub Releases**.
-- Version tags (e.g. `v0.1.0`) also build and upload a debug APK directly to GitHub Releases. Releases are separate from Actions artifacts.
-- Workflows still create GitHub Actions **logs**; set their retention to the minimum in repository Actions settings if needed.
-- Test APKs use ephemeral signing on hosted runners; for new versions, the previous debug build might have to be uninstalled. Stable signing is planned.
+- Main/PR builds only compile and test; a normal push never uploads APKs.
+- **No** `actions/upload-artifact`, `actions/cache` or Gradle Actions caches (`cache-disabled: true`).
+- On an opt-in `[apk]` push, `v*` tag, or explicit `main` manual dispatch with `publish_signed_apk=true`, the workflow uses the same private signing key from GitHub Actions secrets. Missing secrets cause an explicit failure, never a randomly debug-signed release.
+- Signed APKs are uploaded **directly to GitHub Releases**, NOT Actions artifacts. `apksigner verify` checks the APK before publication, alongside its SHA-256 checksum.
+- PRs never receive the release-signing secrets.
+- Normal workflow **logs** are still retained by GitHub. Adjust their retention in repository Actions settings if desired.
+- Source builds remain possible without private secrets; only publishing signed APKs requires them.
 
 ### Next milestones
 M2: validated MPEG-TS HLS VOD downloads. M3.1: MP4 remux with TS fallback. M3.2: fragmented MP4 HLS. M3.3: separate audio/video; DASH follows. M4: progress/resume. M5: optional Firefox for Android companion. M6: stable signing and publication.
