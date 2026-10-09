@@ -8,7 +8,13 @@ Android-first video detector/downloader prototype. **Android 10+**, Kotlin, Andr
 - Download direct MP4/WebM videos through Android DownloadManager into `Downloads/StreamCatch/`.
 - Accept webpage links from Firefox or other Android browsers via Share → StreamCatch.
 
-**HLS/DASH downloading is not yet implemented.** Video detection can miss MSE/blob streams or protected and authenticated players. DRM bypass is not supported.
+### HLS M2 — first Android on-device downloads
+
+- Tap a detected HLS video to load its playlist; choose video quality for master playlists.
+- **Supported now:** completed, unencrypted MPEG-TS HLS VOD playlists with video/audio in the same rendition. Segments download sequentially and are concatenated to an MPEG-TS video (`.ts`) under `Downloads/StreamCatch/`.
+- The Android foreground service continues when you leave the screen; it shows progress and supports cancellation through its notification (allow notifications when prompted).
+- **Not yet supported:** live streams, AES-128 / DRM encryption, separate audio renditions, fragmented MP4 (`#EXT-X-MAP` / `.m4s`), HLS byte ranges or discontinuities, DASH downloads, exporting MPEG-TS to MP4. These fail clearly instead of saving corrupt files. `.ts` playback may require a compatible video player, such as VLC.
+- Media URLs with expired tokens and some cookies/authenticated players can still fail with HTTP 403 or an expired playlist. DRM bypass is outside scope. Do not download content without permission.
 
 ### Build
 Requires JDK 17, Android SDK platform/build-tools 35 and Gradle 8.11.1 (or Android Studio). Run `gradle :app:testDebugUnitTest :app:assembleDebug`. The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
@@ -22,6 +28,6 @@ Requires JDK 17, Android SDK platform/build-tools 35 and Gradle 8.11.1 (or Andro
 - Test APKs use ephemeral signing on hosted runners; for new versions, the previous debug build might have to be uninstalled. Stable signing is planned.
 
 ### Next milestones
-M2: HLS parsing/quality selection/background downloader. M3: DASH. M4: progress/resume. M5: optional Firefox for Android companion. M6: stable signing and publication.
+M2: first MPEG-TS HLS VOD downloads (in progress, see support limits). M3: fragmented MP4 HLS / DASH. M4: progress/resume. M5: optional Firefox for Android companion. M6: stable signing and publication.
 
 See `docs/ARCHITECTURE.md`. Only download content you have permission to save.
