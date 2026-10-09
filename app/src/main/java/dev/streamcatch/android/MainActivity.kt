@@ -3,6 +3,8 @@ package dev.streamcatch.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -28,6 +30,8 @@ import android.widget.ProgressBar
 import android.widget.Toast
 import dev.streamcatch.android.core.MediaKind
 import dev.streamcatch.android.core.MediaUrlDetector
+import dev.streamcatch.android.core.HlsPlaylist
+import dev.streamcatch.android.core.HlsPlaylistParser
 import org.json.JSONArray
 import org.json.JSONTokener
 import java.util.LinkedHashMap
@@ -135,7 +139,8 @@ class MainActivity : Activity() {
                 if (kind != null) {
                     registerMedia(url, mimeType, "Browser download")
                     if (kind.isDirect) downloadDirect(url, kind, userAgent)
-                    else Toast.makeText(this@MainActivity, "${kind.label} detected; stream engine is not implemented yet", Toast.LENGTH_LONG).show()
+                    else if (kind == MediaKind.HLS) prepareHls(url)
+                    else Toast.makeText(this@MainActivity, "DASH download support is planned for M3", Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(this@MainActivity, "Unsupported download type", Toast.LENGTH_LONG).show()
                 }
@@ -228,13 +233,71 @@ class MainActivity : Activity() {
             .setItems(labels) { _, index ->
                 val item = items[index]
                 if (item.kind.isDirect) downloadDirect(item.url, item.kind, webView.settings.userAgentString)
+                else if (item.kind == MediaKind.HLS) prepareHls(item.url)
                 else AlertDialog.Builder(this)
                     .setTitle(item.kind.label)
-                    .setMessage("Stream was found, but downloading HLS/DASH playlists will be added in a later milestone. No download has started.")
+                    .setMessage("DASH is detected, but downloading it is planned for milestone M3.")
                     .setPositiveButton("OK", null).show()
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    /**
+     * Fetch and parse the selected HLS playlist away from the UI thread.
+     * A master playlist yields a quality picker; a media playlist downloads directly.
+     */
+    private fun prepareHls(url: String) {
+        val ua = webView.settings.userAgentString
+        val referrer = webView.url.orEmpty()
+        Toast.makeText(this, "Checking HLS qualities…", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val playlist = HlsPlaylistParser.parse(url, HlsHttp.loadPlaylist(url, ua, referrer))
+                runOnUiThread {
+                    if (closed) return@runOnUiThread
+                    when (playlist) {
+                        is HlsPlaylist.Video -> startHls(url, ua, referrer)
+                        is HlsPlaylist.Master -> {
+                            AlertDialog.Builder(this)
+                                .setTitle("Choose video quality")
+                                .setItems(playlist.variants.map { it.displayName }.toTypedArray()) { _, index ->
+                                    startHls(playlist.variants[index].url, ua, referrer)
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        }
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (!closed) AlertDialog.Builder(this)
+                        .setTitle("Unsupported HLS stream")
+                        .setMessage(error.message ?: "Could not read playlist")
+                        .setPositiveButton("OK", null).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun startHls(url: String, userAgent: String, referrer: String) {
+        val intent = Intent(this, HlsDownloadService::class.java).apply {
+            action = HlsDownloadService.ACTION_DOWNLOAD
+            putExtra(HlsDownloadService.EXTRA_URL, url)
+            putExtra(HlsDownloadService.EXTRA_AGENT, userAgent)
+            putExtra(HlsDownloadService.EXTRA_REFERRER, referrer)
+        }
+        try {
+            startForegroundService(intent)
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 204)
+            }
+            Toast.makeText(this, "HLS download started. Check notifications for progress.", Toast.LENGTH_LONG).show()
+        } catch (error: Exception) {
+            Toast.makeText(this, "Could not start download: ${error.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun downloadDirect(url: String, kind: MediaKind, userAgent: String?) {
