@@ -11,9 +11,12 @@ Android-first video detector/downloader prototype. **Android 10+**, Kotlin, Andr
 ### HLS M2 — first Android on-device downloads
 
 - Tap a detected HLS video to load its playlist; choose video quality for master playlists.
-- **Supported now:** completed, unencrypted MPEG-TS HLS VOD playlists with video/audio in the same rendition. Segments download sequentially and are concatenated to an MPEG-TS video (`.ts`) under `Downloads/StreamCatch/`.
+- **Supported now:** completed, unencrypted MPEG-TS HLS VOD playlists with video/audio in the same rendition. Segments download sequentially to a private temporary file.
+- **M3.1 — MP4 preferred:** Android's MediaExtractor/MediaMuxer now remuxes supported H.264/H.265 + optional AAC encoded samples into a real `.mp4` without re-encoding. It verifies the result and saves it under `Downloads/StreamCatch/`. Playback quality is unchanged, and no cloud/transcoding service is used.
+- **Safety fallback:** If the device's media extractor or codec combination cannot produce a verified MP4, the previously working `.ts` file is saved instead. Failed/pending MP4s and temporary input files are removed, including when cancelled. Both formats are labeled correctly.
+- **Storage note:** Conversion briefly needs free space for the complete temporary TS plus the MP4 (and any TS fallback); ensure sufficient internal storage before large downloads.
 - The Android foreground service continues when you leave the screen; it shows progress and supports cancellation through its notification (allow notifications when prompted).
-- **Not yet supported:** live streams, AES-128 / DRM encryption, separate audio renditions, fragmented MP4 (`#EXT-X-MAP` / `.m4s`), HLS byte ranges or discontinuities, DASH downloads, exporting MPEG-TS to MP4. These fail clearly instead of saving corrupt files. `.ts` playback may require a compatible video player, such as VLC.
+- **Not yet supported:** live streams, AES-128 / DRM encryption, separate audio renditions, fragmented MP4 (`#EXT-X-MAP` / `.m4s`), HLS byte ranges or discontinuities, DASH downloads, MP4 remux for codecs not supported by the Android framework. These fail clearly instead of saving corrupt files. `.ts` playback may require a compatible video player, such as VLC.
 - Media URLs with expired tokens and some cookies/authenticated players can still fail with HTTP 403 or an expired playlist. DRM bypass is outside scope. Do not download content without permission.
 
 ### Build
@@ -28,6 +31,6 @@ Requires JDK 17, Android SDK platform/build-tools 35 and Gradle 8.11.1 (or Andro
 - Test APKs use ephemeral signing on hosted runners; for new versions, the previous debug build might have to be uninstalled. Stable signing is planned.
 
 ### Next milestones
-M2: first MPEG-TS HLS VOD downloads (in progress, see support limits). M3: fragmented MP4 HLS / DASH. M4: progress/resume. M5: optional Firefox for Android companion. M6: stable signing and publication.
+M2: validated MPEG-TS HLS VOD downloads. M3.1: MP4 remux with TS fallback. M3.2: fragmented MP4 HLS. M3.3: separate audio/video; DASH follows. M4: progress/resume. M5: optional Firefox for Android companion. M6: stable signing and publication.
 
 See `docs/ARCHITECTURE.md`. Only download content you have permission to save.
