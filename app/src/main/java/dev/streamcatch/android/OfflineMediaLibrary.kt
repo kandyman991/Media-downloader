@@ -16,12 +16,7 @@ data class OfflineMedia(val uri: Uri, val title: String, val size: Long, val sav
 object OfflineMediaLibrary {
     private const val PREFS = "streamcatch_media_center"
     private const val IMPORTS = "saf_imported_uris"
-    private val supported = setOf("mp4", "m4v", "webm", "mkv", "ts", "mov", "mp3", "m4a", "flac", "ogg")
-
-    fun supports(name: String): Boolean {
-        val extension = name.substringAfterLast('.', "").lowercase()
-        return extension in supported
-    }
+    fun supports(name: String): Boolean = dev.streamcatch.android.core.OfflineMediaPolicy.supports(name)
 
     fun rememberDocument(context: Context, uri: Uri) {
         require(uri.scheme == "content") { "Only user-selected content URIs may be imported" }
