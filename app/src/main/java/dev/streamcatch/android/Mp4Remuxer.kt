@@ -19,7 +19,13 @@ import java.nio.ByteBuffer
  * throw, allowing HlsDownloadService to retain its known-good .ts fallback.
  */
 object Mp4Remuxer {
-    fun remux(transportStream: File, output: FileDescriptor, cancelled: () -> Boolean) {
+    /** Truthful report of what was actually extracted and written. */
+    data class RemuxResult(
+        val videoSamples: Int,
+        val audioSamples: Int,
+        val sourceHasAudio: Boolean
+    )
+    fun remux(transportStream: File, output: FileDescriptor, cancelled: () -> Boolean): RemuxResult {
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null
         var started = false
@@ -92,6 +98,11 @@ object Mp4Remuxer {
             if (cancelled()) throw DownloadCancelled()
             target.stop()
             stopped = true
+            return RemuxResult(
+                videoSamples = videoSamples,
+                audioSamples = audioSamples,
+                sourceHasAudio = mimes.any { it.startsWith("audio/") }
+            )
         } finally {
             if (started && !stopped) runCatching { muxer?.stop() }
             runCatching { muxer?.release() }
@@ -100,7 +111,7 @@ object Mp4Remuxer {
     }
 
     /** Validate the produced MP4 before exposing the pending Downloads entry. */
-    fun verifyMp4(output: FileDescriptor) {
+    fun verifyMp4(output: FileDescriptor, expectedAudio: Boolean): Boolean {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(output)
@@ -109,11 +120,27 @@ object Mp4Remuxer {
             }
             if (!Mp4RemuxPolicy.canRemux(mimes)) throw IOException("MP4 output has unexpected tracks")
             val videoTrack = mimes.indexOfFirst { it.startsWith("video/") }
+            if (!Mp4RemuxPolicy.preservesAudio(expectedAudio, mimes.any { it.startsWith("audio/") })) {
+                throw IOException("Remux lost the source's audio track")
+            }
             extractor.selectTrack(videoTrack)
             val sample = ByteBuffer.allocateDirect(1024 * 1024)
             if (extractor.readSampleData(sample, 0) <= 0) {
                 throw IOException("MP4 has no readable video frames")
             }
+            val audioTrack = mimes.indexOfFirst { it.startsWith("audio/") }
+            if (audioTrack >= 0) {
+                // Validation must exercise actual audio samples, not just the
+                // presence of an empty track descriptor in the MP4 header.
+                extractor.unselectTrack(videoTrack)
+                extractor.selectTrack(audioTrack)
+                extractor.seekTo(0L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                sample.clear()
+                if (extractor.readSampleData(sample, 0) <= 0) {
+                    throw IOException("MP4 contains an empty or unreadable audio track")
+                }
+            }
+            return audioTrack >= 0
         } finally {
             extractor.release()
         }

@@ -1,6 +1,6 @@
 # Media-downloader — StreamCatch Android
 
-Android-first video detector/downloader prototype. **Android 10+**, Kotlin, Android WebView.
+Android-first video detector/downloader prototype. **Android 10+**, Kotlin. The GeckoView + official uBlock Origin migration is under review in PR #7; the last released APK may still use WebView.
 
 ### MVP features
 - Open HTTPS webpages and detect media using WebView request observation, HTML video elements, and resource timings.
@@ -20,7 +20,7 @@ Android-first video detector/downloader prototype. **Android 10+**, Kotlin, Andr
 - Media URLs with expired tokens and some cookies/authenticated players can still fail with HTTP 403 or an expired playlist. DRM bypass is outside scope. Do not download content without permission.
 
 ### Build
-Requires JDK 17, Android SDK platform/build-tools 35 and Gradle 8.11.1 (or Android Studio). Run `gradle :app:testDebugUnitTest :app:assembleDebug`. The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
+For current `main` releases, see the release tag's build configuration. On the experimental GeckoView branch, requires JDK 17, Android SDK Platform `android-37.0` (API 37.0), Android build-tools 36.0.0, Android Gradle Plugin 9.1.1, Kotlin 2.4.20 and Gradle 9.3.1. Keep `targetSdk=35` until a separate runtime-behavior review. Run `gradle :app:testDebugUnitTest :app:assembleDebug`. The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
 
 ### Persistent signed APKs: in-place Android updates
 
@@ -53,3 +53,10 @@ To publish a new signed test APK after code is ready, use the GitHub Actions UI 
 M2: validated MPEG-TS HLS VOD downloads. M3.1: MP4 remux with TS fallback. M3.2: fragmented MP4 HLS. M3.3: separate audio/video; DASH follows. M4: progress/resume. M5: optional Firefox for Android companion. M6: stable signing and publication.
 
 See `docs/ARCHITECTURE.md`. Only download content you have permission to save.
+
+### GeckoView + full uBlock Origin (PR #7 — experimental)
+- Mozilla GeckoView replaces the embedded WebView on the feature branch.
+- Install the official Mozilla-signed **uBlock Origin** by tapping **uBO → Install** and approving its site/request permissions. Once installed, the **uBO** controls expose its real popup, dashboard/filter lists, enable/disable and manual update actions.
+- A separate built-in Gecko WebExtension reports candidate MP4/WebM/HLS/DASH network requests and video DOM sources to the existing detector.
+- **Not yet device verified.** Cookie-authenticated downloads may fail until the existing OS download transports are replaced with Gecko-cookie-aware ones. Do not delete the previous working APK before acceptance tests.
+- See `docs/GECKOVIEW_ACCEPTANCE.md` for blocking merge gates.

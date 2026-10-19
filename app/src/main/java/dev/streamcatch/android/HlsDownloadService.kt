@@ -44,6 +44,8 @@ class HlsDownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Ensure the download worker uses the same Gecko profile as the browser.
+        StreamCatchGeckoRuntime.get(applicationContext)
         notifications = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notifications.createNotificationChannel(
             NotificationChannel(CHANNEL, "StreamCatch downloads", NotificationManager.IMPORTANCE_LOW)
@@ -80,11 +82,14 @@ class HlsDownloadService : Service() {
         return START_NOT_STICKY
     }
 
-    private data class SavedVideo(val uri: Uri, val name: String, val mime: String, val isMp4: Boolean)
+    private data class SavedVideo(
+        val uri: Uri, val name: String, val mime: String, val isMp4: Boolean,
+        val hasAudio: Boolean? = null
+    )
 
     private fun download(url: String, agent: String, referrer: String) {
         val media = when (val playlist = HlsPlaylistParser.parse(
-            url, HlsHttp.loadPlaylist(url, agent, referrer)
+            url, HlsHttp.loadPlaylist(applicationContext, url, agent, referrer)
         )) {
             is HlsPlaylist.Video -> playlist
             is HlsPlaylist.Master -> throw IOException("Select a quality first")
@@ -97,7 +102,15 @@ class HlsDownloadService : Service() {
             FileOutputStream(temp).use { output ->
                 media.segments.forEachIndexed { index, segment ->
                     if (cancel.get()) throw DownloadCancelled()
-                    HlsHttp.appendTransportStream(segment, agent, referrer, output) { cancel.get() }
+                    try {
+                        HlsHttp.appendTransportStream(applicationContext, segment, agent, referrer, output) { cancel.get() }
+                    } catch (cancelled: DownloadCancelled) {
+                        throw cancelled
+                    } catch (failure: IOException) {
+                        // Do not expose signed media URLs in notifications or logs.
+                        val safeMessage = failure.message.orEmpty().removePrefix("HLS segment ")
+                        throw IOException("Segment ${index + 1}/${media.segments.size}: $safeMessage", failure)
+                    }
                     notifications.notify(NOTIFICATION_ID, progressNotification(
                         "Downloading: ${index + 1}/${media.segments.size} segments",
                         index + 1, media.segments.size
@@ -121,8 +134,15 @@ class HlsDownloadService : Service() {
                 notifications.notify(NOTIFICATION_ID, progressNotification("Saving compatible TS fallback", 0, 0))
                 saveTransportStream(temp, base)
             }
-            val label = if (saved.isMp4) "MP4" else "TS (MP4 not supported for this stream/device)"
-            showResult("Saved $label to Downloads/StreamCatch", true, saved.uri, saved.mime)
+            val resultMessage = when {
+                saved.isMp4 && saved.hasAudio == true ->
+                    "Saved MP4 with AAC audio track to Downloads/StreamCatch"
+                saved.isMp4 ->
+                    "Saved VIDEO-ONLY MP4 (no audio track detected). Separate HLS audio may be needed."
+                else ->
+                    "Saved TS fallback to Downloads/StreamCatch (MP4 remux unavailable)"
+            }
+            showResult(resultMessage, true, saved.uri, saved.mime)
         } finally {
             temp.delete()
         }
@@ -151,18 +171,23 @@ class HlsDownloadService : Service() {
         val uri = pendingVideo(name, "video/mp4")
         var completed = false
         try {
-            contentResolver.openFileDescriptor(uri, "rw")?.use { fd ->
+            val report = contentResolver.openFileDescriptor(uri, "rw")?.use { fd ->
                 Mp4Remuxer.remux(temp, fd.fileDescriptor) { cancel.get() }
             } ?: throw IOException("Unable to open MP4 destination")
             if (cancel.get()) throw DownloadCancelled()
             // Verify after MediaMuxer has closed and flushed its output.
-            contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
-                Mp4Remuxer.verifyMp4(fd.fileDescriptor)
+            val hasAudio = contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
+                Mp4Remuxer.verifyMp4(fd.fileDescriptor, expectedAudio = report.sourceHasAudio)
             } ?: throw IOException("Cannot verify MP4")
+            // If audio samples were extracted but missing from the saved file,
+            // never publish a false-success video-only MP4.
+            if (report.audioSamples > 0 && !hasAudio) {
+                throw IOException("MP4 lost the audio track during remux")
+            }
             if (cancel.get()) throw DownloadCancelled()
             finalizeVideo(uri)
             completed = true
-            return SavedVideo(uri, name, "video/mp4", true)
+            return SavedVideo(uri, name, "video/mp4", true, hasAudio = hasAudio)
         } finally {
             if (!completed) contentResolver.delete(uri, null, null)
         }

@@ -21,6 +21,15 @@ class Mp4RemuxPolicyTest {
         assertFalse(Mp4RemuxPolicy.canRemux(emptyList()))
     }
 
+    @Test fun missingSourceAudioMustBeReportedButNotMisrepresentedAsPreservedSound() {
+        // Silent source is still a legitimate video-only export (explicitly labeled).
+        assertTrue(Mp4RemuxPolicy.preservesAudio(sourceHasAudio = false, outputHasAudio = false))
+        assertTrue(Mp4RemuxPolicy.preservesAudio(sourceHasAudio = false, outputHasAudio = true))
+        // Regression: never report full A/V completion after losing actual source audio.
+        assertFalse(Mp4RemuxPolicy.preservesAudio(sourceHasAudio = true, outputHasAudio = false))
+        assertTrue(Mp4RemuxPolicy.preservesAudio(sourceHasAudio = true, outputHasAudio = true))
+    }
+
     @Test fun rebaseTimestampsWithoutNegativeValues() {
         assertEquals(0L, Mp4RemuxPolicy.relativePts(9_000_000L, 9_000_000L))
         assertEquals(100_000L, Mp4RemuxPolicy.relativePts(9_100_000L, 9_000_000L))
