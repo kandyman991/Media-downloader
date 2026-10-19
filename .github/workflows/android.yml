@@ -26,6 +26,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate bundled GeckoView media extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/media-bridge/background.js
+          node --check app/src/main/assets/media-bridge/content.js
+          python3 -c 'import json; m=json.load(open("app/src/main/assets/media-bridge/manifest.json")); assert m["browser_specific_settings"]["gecko"]["id"] == "streamcatch-media@local"; assert {"geckoViewAddons", "nativeMessaging", "webRequest"}.issubset(m["permissions"])'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -67,6 +74,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Validate bundled GeckoView media extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/media-bridge/background.js
+          node --check app/src/main/assets/media-bridge/content.js
+          python3 -c 'import json; m=json.load(open("app/src/main/assets/media-bridge/manifest.json")); assert m["browser_specific_settings"]["gecko"]["id"] == "streamcatch-media@local"; assert {"geckoViewAddons", "nativeMessaging", "webRequest"}.issubset(m["permissions"])'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
