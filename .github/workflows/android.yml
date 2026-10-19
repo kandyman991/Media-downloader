@@ -32,6 +32,7 @@ jobs:
           set -euo pipefail
           node --check app/src/main/assets/media-bridge/background.js
           node --check app/src/main/assets/media-bridge/content.js
+          node tools/test-media-bridge.cjs
           python3 -c 'import json; m=json.load(open("app/src/main/assets/media-bridge/manifest.json")); assert m["browser_specific_settings"]["gecko"]["id"] == "streamcatch-media@local"; assert {"geckoViewAddons", "nativeMessaging", "webRequest"}.issubset(m["permissions"])'
       - uses: actions/setup-java@v4
         with:
@@ -155,6 +156,7 @@ jobs:
           set -euo pipefail
           node --check app/src/main/assets/media-bridge/background.js
           node --check app/src/main/assets/media-bridge/content.js
+          node tools/test-media-bridge.cjs
           python3 -c 'import json; m=json.load(open("app/src/main/assets/media-bridge/manifest.json")); assert m["browser_specific_settings"]["gecko"]["id"] == "streamcatch-media@local"; assert {"geckoViewAddons", "nativeMessaging", "webRequest"}.issubset(m["permissions"])'
       - uses: actions/setup-java@v4
         with:
