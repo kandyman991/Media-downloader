@@ -12,7 +12,7 @@ import org.mozilla.geckoview.WebExtension
  * All messages are untrusted and must pass MediaUrlDetector checks in MainActivity.
  */
 class GeckoMediaBridge(
-    private val onMedia: (String, String) -> Unit
+    private val onMedia: (String, String, String?) -> Unit
 ) {
     private var nativePort: WebExtension.Port? = null
 
@@ -30,7 +30,7 @@ class GeckoMediaBridge(
                             if (json.optString("type") != "media") return
                             val url = json.optString("url")
                             if (url.length !in 1..8192) return
-                            onMedia(url, json.optString("source", "Gecko"))
+                            onMedia(url, json.optString("source", "Gecko"), json.optString("referrerOrigin").takeIf { it.isNotBlank() })
                         }
                         override fun onDisconnect(port: WebExtension.Port) {
                             if (nativePort === port) nativePort = null
