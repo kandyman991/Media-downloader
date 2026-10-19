@@ -30,15 +30,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android 36 SDK from runner-provided tools
+      - name: Install Android 37 SDK from runner-provided tools
         shell: bash
         run: |
           set -euo pipefail
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: '9.3.1'
           cache-disabled: true
       - name: Test and compile (no APK upload)
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --no-build-cache
@@ -56,7 +56,7 @@ jobs:
           export STREAMCATCH_SIGNING_ALIAS="ci-disposable"
           gradle :app:assembleRelease --no-daemon --no-build-cache
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          "$SDK/build-tools/35.0.0/apksigner" verify \
+          "$SDK/build-tools/36.0.0/apksigner" verify \
             "app/build/outputs/apk/release/app-release.apk"
           rm -f "$keyfile"
 
@@ -71,15 +71,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android 36 SDK from runner-provided tools
+      - name: Install Android 37 SDK from runner-provided tools
         shell: bash
         run: |
           set -euo pipefail
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;35.0.0"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: '9.3.1'
           cache-disabled: true
       - name: Prepare private signing keystore
         shell: bash
@@ -109,7 +109,7 @@ jobs:
           set -euo pipefail
           apk="app/build/outputs/apk/release/app-release.apk"
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          "$SDK/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+          "$SDK/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
           sha256sum "$apk" > "$RUNNER_TEMP/streamcatch-release.sha256"
       - name: Publish signed APK as GitHub Release asset (not Actions artifact)
         env:
