@@ -52,9 +52,10 @@ browser.webRequest.onBeforeSendHeaders.addListener(
     const referer = (details.requestHeaders || []).find(
       item => item.name.toLowerCase() === "referer"
     );
-    if (referer && typeof referer.value === "string") {
-      deliver(details.url, "Browser headers", referer.value);
-    }
+    // Explicitly record absence of Referer too: adding a fake page Referer
+    // would differ from actual browser playback and can cause valid 403s.
+    deliver(details.url, "Browser headers",
+      referer && typeof referer.value === "string" ? referer.value : "");
   },
   { urls: ["https://*/*"] },
   ["requestHeaders"]
