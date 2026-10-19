@@ -25,7 +25,7 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "0.3.2"
-        resValue("string", "streamcatch_app_name", "StreamCatch")
+        manifestPlaceholders["appLabel"] = "StreamCatch"
     }
 
     signingConfigs {
@@ -46,7 +46,7 @@ android {
             initWith(getByName("debug"))
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-gecko-preview"
-            resValue("string", "streamcatch_app_name", "StreamCatch Preview")
+            manifestPlaceholders["appLabel"] = "StreamCatch Preview"
             matchingFallbacks.add("debug")
             signingConfig = signingConfigs.getByName("debug")
         }
