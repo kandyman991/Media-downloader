@@ -43,6 +43,8 @@ class LibVlcPlayerActivity : Activity() {
     private lateinit var seek: SeekBar
     private lateinit var info: TextView
     private var userSeeking = false
+    private var useTextureView = true
+    private var resumeAfterSurfaceSwitch: Long? = null
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
@@ -136,6 +138,15 @@ class LibVlcPlayerActivity : Activity() {
             setOnClickListener { seekRelative(10_000) }
         })
         root.addView(controls)
+        root.addView(Button(this).apply {
+            text = "Video output: Texture · Tap if screen stays black"
+            textSize = 12f
+            setOnClickListener {
+                switchVideoOutput()
+                text = if (useTextureView) "Video output: Texture · Tap if screen stays black"
+                    else "Video output: Surface · Tap if screen stays black"
+            }
+        })
         setContentView(root)
         openFile()
     }
@@ -156,6 +167,30 @@ class LibVlcPlayerActivity : Activity() {
         player?.let { p ->
             val length = p.length
             if (length > 0) p.time = (p.time + changeMs).coerceIn(0L, length)
+        }
+    }
+
+    /**
+     * Samsung device fallback: allow switching LibVLC's display backend in-place,
+     * preserving the seek position and source descriptor. No re-download needed.
+     * The default remains the VideoHelper-managed TextureView.
+     */
+    private fun switchVideoOutput() {
+        val mp = player ?: return
+        val at = mp.time.coerceAtLeast(0L)
+        val nextTextureMode = !useTextureView
+        try {
+            mp.stop()
+            mp.detachViews()
+            mp.attachViews(videoLayout, null, false, nextTextureMode)
+            useTextureView = nextTextureMode
+            resumeAfterSurfaceSwitch = at
+            info.text = "Switching to ${if (useTextureView) "Texture" else "Surface"} rendering…"
+            mp.play()
+        } catch (error: Exception) {
+            info.text = "Could not switch video renderer"
+            android.util.Log.w("StreamCatch-VLC", "Renderer switch failed", error)
+            Toast.makeText(this, "Could not switch video output", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -183,10 +218,17 @@ class LibVlcPlayerActivity : Activity() {
             // surface lifetime, size, aspect ratio and screen rotation.
             // Use TextureView first because the raw SurfaceView path rendered
             // black video (even though audio and position were correct).
-            mediaPlayer.attachViews(videoLayout, null, false, true)
+            mediaPlayer.attachViews(videoLayout, null, false, useTextureView)
             mediaPlayer.setEventListener { event ->
                 when (event.type) {
-                    MediaPlayer.Event.Playing -> runOnUiThread { info.text = "Playing locally · LibVLC" }
+                    MediaPlayer.Event.Playing -> runOnUiThread {
+                        if (player !== mediaPlayer) return@runOnUiThread
+                        resumeAfterSurfaceSwitch?.let { position ->
+                            resumeAfterSurfaceSwitch = null
+                            if (position > 0L) mediaPlayer.time = position
+                        }
+                        info.text = "Playing locally · LibVLC (${if (useTextureView) "Texture" else "Surface"})"
+                    }
                     MediaPlayer.Event.EndReached -> runOnUiThread { info.text = "Playback finished" }
                     MediaPlayer.Event.EncounteredError -> runOnUiThread {
                         info.text = "Unable to play this file with LibVLC"
