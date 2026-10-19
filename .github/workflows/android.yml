@@ -138,4 +138,3 @@ jobs:
           if [[ -n "${STREAMCATCH_SIGNING_STORE_FILE:-}" ]]; then
             rm -f -- "$STREAMCATCH_SIGNING_STORE_FILE"
           fi
-          fi
