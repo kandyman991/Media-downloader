@@ -120,7 +120,7 @@ object Mp4Remuxer {
             }
             if (!Mp4RemuxPolicy.canRemux(mimes)) throw IOException("MP4 output has unexpected tracks")
             val videoTrack = mimes.indexOfFirst { it.startsWith("video/") }
-            if (expectedAudio && mimes.none { it.startsWith("audio/") }) {
+            if (!Mp4RemuxPolicy.preservesAudio(expectedAudio, mimes.any { it.startsWith("audio/") })) {
                 throw IOException("Remux lost the source's audio track")
             }
             extractor.selectTrack(videoTrack)
