@@ -10,7 +10,11 @@ val signingAlias = providers.environmentVariable("STREAMCATCH_SIGNING_ALIAS").or
 
 android {
     namespace = "dev.streamcatch.android"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
 
     defaultConfig {
         applicationId = "dev.streamcatch.android"
