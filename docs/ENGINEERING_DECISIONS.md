@@ -35,3 +35,6 @@ Source: `README.md` / project handoff; verify against actual code and test resul
 ## D-900 — ChatGPT project continuity (2026-10-10)
 
 Use curated `CHAT_HANDOFF.md` plus explicit decision/failed-approach records. Check GitHub live before action. No automatic conversation ingestion.
+
+## D-006 — Real Firefox extension support
+Use Mozilla GeckoView to run the authentic, Mozilla-signed uBlock Origin with its own popup, dashboard and filters. Keep StreamCatch's privileged built-in media-observation extension independent of uBO. Browser-engine changes must preserve existing download behavior or document specific parity gaps and block release. User approval is required for extension installation/permissions; never fork/bundle uBO into the APK. Source: PR #7 architecture review, pending device verification.
