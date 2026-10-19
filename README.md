@@ -20,7 +20,7 @@ Android-first video detector/downloader prototype. **Android 10+**, Kotlin. The 
 - Media URLs with expired tokens and some cookies/authenticated players can still fail with HTTP 403 or an expired playlist. DRM bypass is outside scope. Do not download content without permission.
 
 ### Build
-Requires JDK 17, Android SDK platform/build-tools 35 and Gradle 8.11.1 (or Android Studio). Run `gradle :app:testDebugUnitTest :app:assembleDebug`. The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
+For current `main` releases, see the release tag's build configuration. On the experimental GeckoView branch, requires JDK 17, Android SDK Platform `android-37.0` (API 37.0), Android build-tools 36.0.0, Android Gradle Plugin 9.1.1, Kotlin 2.4.20 and Gradle 9.3.1. Keep `targetSdk=35` until a separate runtime-behavior review. Run `gradle :app:testDebugUnitTest :app:assembleDebug`. The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
 
 ### Persistent signed APKs: in-place Android updates
 
