@@ -34,7 +34,10 @@ import org.mozilla.geckoview.WebResponse
 
 /** Android-first MVP: HTTPS page inspection + OS-managed direct downloads. */
 class MainActivity : Activity() {
-    private data class MediaCandidate(val url: String, val kind: MediaKind, val discoveredBy: String)
+    private data class MediaCandidate(
+        val url: String, val kind: MediaKind, val discoveredBy: String,
+        val referrerOrigin: String? = null, val referrerEvidence: Int = 0
+    )
 
     private lateinit var geckoView: GeckoView
     private lateinit var browserSession: GeckoSession
@@ -55,7 +58,7 @@ class MainActivity : Activity() {
         runtime = StreamCatchGeckoRuntime.get(applicationContext)
         browserSession = GeckoSession()
         browserSession.open(runtime)
-        mediaBridge = GeckoMediaBridge { url, source -> registerMedia(url, null, source) }
+        mediaBridge = GeckoMediaBridge { url, source, observedOrigin -> registerMedia(url, null, source, observedOrigin) }
         makeUi()
         mediaBridge.install(runtime)
         blocker = UblockOriginManager(this, runtime, browserSession) { active ->
@@ -203,11 +206,29 @@ class MainActivity : Activity() {
         mediaButton.text = "Videos (0)"
     }
 
-    private fun registerMedia(url: String, mimeType: String?, foundBy: String) {
+    private fun registerMedia(url: String, mimeType: String?, foundBy: String, observedOrigin: String? = null) {
         val kind = MediaUrlDetector.classify(url, mimeType) ?: return
+        // The origin must come from an actual observed page/frame or Gecko request.
+        // Never trust an arbitrary URL as a Referer and never pass signed URL queries.
+        val origin = observedOrigin?.let { dev.streamcatch.android.core.HlsRequestPolicy.safeReferrerOrigin(it) }
+        val evidence = when {
+            origin == null -> 0
+            foundBy == "Browser headers" -> 2
+            else -> 1
+        }
         runOnUiThread {
-            if (closed || media.containsKey(url) || media.size >= 100) return@runOnUiThread
-            media[url] = MediaCandidate(url, kind, foundBy)
+            if (closed) return@runOnUiThread
+            val previous = media[url]
+            if (previous != null) {
+                // onBeforeRequest arrives before onBeforeSendHeaders: upgrade the
+                // candidate when Gecko's actual Referer header is observed.
+                if (evidence > previous.referrerEvidence) {
+                    media[url] = previous.copy(referrerOrigin = origin, referrerEvidence = evidence)
+                }
+                return@runOnUiThread
+            }
+            if (media.size >= 100) return@runOnUiThread
+            media[url] = MediaCandidate(url, kind, foundBy, origin, evidence)
             mediaButton.text = "Videos (${media.size})"
         }
     }
@@ -233,7 +254,7 @@ class MainActivity : Activity() {
             .setItems(labels) { _, index ->
                 val item = items[index]
                 if (item.kind.isDirect) downloadDirect(item.url, item.kind, GeckoSession.getDefaultUserAgent())
-                else if (item.kind == MediaKind.HLS) prepareHls(item.url)
+                else if (item.kind == MediaKind.HLS) prepareHls(item.url, item.referrerOrigin)
                 else AlertDialog.Builder(this)
                     .setTitle(item.kind.label)
                     .setMessage("DASH is detected, but downloading it is planned for milestone M3.")
@@ -247,9 +268,9 @@ class MainActivity : Activity() {
      * Fetch and parse the selected HLS playlist away from the UI thread.
      * A master playlist yields a quality picker; a media playlist downloads directly.
      */
-    private fun prepareHls(url: String) {
+    private fun prepareHls(url: String, observedReferrerOrigin: String? = null) {
         val ua = GeckoSession.getDefaultUserAgent()
-        val referrer = currentUrl
+        val referrer = observedReferrerOrigin ?: currentUrl
         Toast.makeText(this, "Checking HLS qualities…", Toast.LENGTH_SHORT).show()
         Thread {
             try {
