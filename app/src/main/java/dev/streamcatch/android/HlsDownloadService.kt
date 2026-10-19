@@ -99,7 +99,15 @@ class HlsDownloadService : Service() {
             FileOutputStream(temp).use { output ->
                 media.segments.forEachIndexed { index, segment ->
                     if (cancel.get()) throw DownloadCancelled()
-                    HlsHttp.appendTransportStream(applicationContext, segment, agent, referrer, output) { cancel.get() }
+                    try {
+                        HlsHttp.appendTransportStream(applicationContext, segment, agent, referrer, output) { cancel.get() }
+                    } catch (cancelled: DownloadCancelled) {
+                        throw cancelled
+                    } catch (failure: IOException) {
+                        // Do not expose signed media URLs in notifications or logs.
+                        val safeMessage = failure.message.orEmpty().removePrefix("HLS segment ")
+                        throw IOException("Segment ${index + 1}/${media.segments.size}: $safeMessage", failure)
+                    }
                     notifications.notify(NOTIFICATION_ID, progressNotification(
                         "Downloading: ${index + 1}/${media.segments.size} segments",
                         index + 1, media.segments.size
