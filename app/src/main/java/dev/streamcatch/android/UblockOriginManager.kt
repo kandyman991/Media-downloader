@@ -63,10 +63,10 @@ class UblockOriginManager(
                 askForPermissions("uBlock Origin update requires new permissions", newPermissions, newOrigins)
         })
         controller.list().accept({ addons ->
-            addons.firstOrNull { it.id == EXTENSION_ID }?.let(::activate)
+            addons?.firstOrNull { it.id == EXTENSION_ID }?.let(::activate)
             onStateChanged(extension != null)
         }, { error ->
-            showError("Could not load add-ons: ${error.message}")
+            showError("Could not load add-ons: ${error?.message ?: "Unknown error"}")
         })
     }
 
@@ -144,11 +144,11 @@ class UblockOriginManager(
                     controller.install(OFFICIAL_XPI, WebExtensionController.INSTALLATION_METHOD_MANAGER)
                         .accept({ installed ->
                             installationApproved = false
-                            if (installed.id == EXTENSION_ID) activate(installed)
+                            if (installed != null && installed.id == EXTENSION_ID) activate(installed)
                             else showError("Unexpected extension identity")
                         }, { error ->
                             installationApproved = false
-                            showError("uBlock Origin installation failed: ${error.message}")
+                            showError("uBlock Origin installation failed: ${error?.message ?: "Unknown error"}")
                         })
                 }
                 .setNegativeButton("Cancel", null)
@@ -173,12 +173,14 @@ class UblockOriginManager(
                     2 -> {
                         val result = if (enabled) controller.disable(addon, WebExtensionController.EnableSource.USER)
                             else controller.enable(addon, WebExtensionController.EnableSource.USER)
-                        result.accept({ activate(it) }, { showError("Could not change extension state: ${it.message}") })
+                        result.accept({ updated ->
+                            if (updated != null) activate(updated) else showError("Extension state change returned no extension")
+                        }, { error -> showError("Could not change extension state: ${error?.message ?: "Unknown error"}") })
                     }
                     3 -> controller.update(addon).accept({
                         if (it != null) activate(it)
                         else showError("uBlock Origin is already up to date")
-                    }, { showError("Extension update failed: ${it.message}") })
+                    }, { showError("Extension update failed: ${it?.message ?: "Unknown error"}") })
                 }
             }.setNegativeButton("Close", null).show()
     }
