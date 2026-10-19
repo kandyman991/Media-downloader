@@ -216,27 +216,8 @@ class MainActivity : Activity() {
     }
 
     private fun scanPage() {
-        // No addJavascriptInterface on third-party pages: only read safe JSON output.
-        val js = """(function() {
-          const urls = new Set();
-          for (const el of document.querySelectorAll('video, video source, source')) {
-            if (el.currentSrc) urls.add(el.currentSrc);
-            if (el.src) urls.add(el.src);
-          }
-          for (const entry of performance.getEntriesByType('resource')) {
-            if (/\.(m3u8|mpd|mp4|m4v|webm|mov)(?:[?#]|$)/i.test(entry.name)) urls.add(entry.name);
-          }
-          return JSON.stringify(Array.from(urls).slice(0, 250));
-        })();""".trimIndent()
-        webView.evaluateJavascript(js) { encoded ->
-            try {
-                val json = JSONTokener(encoded).nextValue() as? String ?: return@evaluateJavascript
-                val urls = JSONArray(json)
-                for (i in 0 until urls.length()) registerMedia(urls.getString(i), null, "Page")
-            } catch (_: Exception) {
-                // A cross-origin frame or page navigation may prevent inspection.
-            }
-        }
+        // GeckoView isolates DOM / network observation in a privileged extension.
+        mediaBridge.scan()
     }
 
     private fun showMedia() {
@@ -254,7 +235,7 @@ class MainActivity : Activity() {
             .setTitle("Detected videos (${items.size})")
             .setItems(labels) { _, index ->
                 val item = items[index]
-                if (item.kind.isDirect) downloadDirect(item.url, item.kind, webView.settings.userAgentString)
+                if (item.kind.isDirect) downloadDirect(item.url, item.kind, GeckoSession.getDefaultUserAgent())
                 else if (item.kind == MediaKind.HLS) prepareHls(item.url)
                 else AlertDialog.Builder(this)
                     .setTitle(item.kind.label)
@@ -270,8 +251,8 @@ class MainActivity : Activity() {
      * A master playlist yields a quality picker; a media playlist downloads directly.
      */
     private fun prepareHls(url: String) {
-        val ua = webView.settings.userAgentString
-        val referrer = webView.url.orEmpty()
+        val ua = GeckoSession.getDefaultUserAgent()
+        val referrer = currentUrl
         Toast.makeText(this, "Checking HLS qualities…", Toast.LENGTH_SHORT).show()
         Thread {
             try {
@@ -332,9 +313,8 @@ class MainActivity : Activity() {
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "StreamCatch/$filename")
             if (!userAgent.isNullOrBlank()) request.addRequestHeader("User-Agent", userAgent)
-            // Only use media-domain cookies; never send the current page's cookies to another host.
-            val cookie = CookieManager.getInstance().getCookie(url)
-            if (!cookie.isNullOrBlank()) request.addRequestHeader("Cookie", cookie)
+            // Gecko's browser cookie jar is independent of Android WebView/DownloadManager.
+            // Do not attach unrelated WebView cookies to a Gecko-discovered URL.
             val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             dm.enqueue(request)
             Toast.makeText(this, "Downloading to Downloads/StreamCatch", Toast.LENGTH_LONG).show()
@@ -348,13 +328,15 @@ class MainActivity : Activity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        webView.saveState(outState)
+        outState.putString("lastUrl", currentUrl)
         super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
         closed = true
-        webView.destroy()
+        runtime.webExtensionController.setPromptDelegate(null)
+        geckoView.releaseSession()
+        browserSession.close()
         super.onDestroy()
     }
 
