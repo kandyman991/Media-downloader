@@ -104,7 +104,7 @@ jobs:
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           test -s "$apk"
           "$SDK/build-tools/36.0.0/aapt" dump badging "$apk" |
-            grep -Fq "package: name='dev.streamcatch.android.preview'"
+            grep -F "package: name='dev.streamcatch.android.preview'" > /dev/null
           "$SDK/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
           sha256sum "$apk" > "$RUNNER_TEMP/streamcatch-gecko-preview.sha256"
       - name: Publish side-by-side preview directly to GitHub Releases
