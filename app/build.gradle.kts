@@ -25,6 +25,7 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "0.3.2"
+        resValue("string", "streamcatch_app_name", "StreamCatch")
     }
 
     signingConfigs {
@@ -40,6 +41,15 @@ android {
     }
 
     buildTypes {
+        // Side-by-side, disposable test package. Never overwrite signed StreamCatch.
+        create("preview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-gecko-preview"
+            resValue("string", "streamcatch_app_name", "StreamCatch Preview")
+            matchingFallbacks.add("debug")
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             // Reuse one private, persistent signing key across all APK releases.
