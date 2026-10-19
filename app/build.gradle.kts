@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 // Only the signed-release CI job receives these via GitHub Actions secrets.
@@ -11,7 +10,7 @@ val signingAlias = providers.environmentVariable("STREAMCATCH_SIGNING_ALIAS").or
 
 android {
     namespace = "dev.streamcatch.android"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.streamcatch.android"
@@ -45,9 +44,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
 }
 
