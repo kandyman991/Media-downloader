@@ -67,6 +67,65 @@ jobs:
             "app/build/outputs/apk/release/app-release.apk"
           rm -f "$keyfile"
 
+  # Explicitly limited to trusted PR #7. No release signing secrets.
+  # APK goes straight to GitHub Releases, never Actions artifact storage.
+  publish-geckoview-preview:
+    needs: verify
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 7 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/geckoview-ublock-foundation' && github.event.pull_request.base.ref == 'main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK (API 37.0)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+          cache-disabled: true
+      - name: Build isolated preview APK (not Actions artifact)
+        run: gradle :app:assemblePreview --no-daemon --no-build-cache
+      - name: Verify preview APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/preview/app-preview.apk"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          test -s "$apk"
+          "$SDK/build-tools/36.0.0/aapt" dump badging "$apk" |
+            grep -Fq "package: name='dev.streamcatch.android.preview'"
+          "$SDK/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
+          sha256sum "$apk" > "$RUNNER_TEMP/streamcatch-gecko-preview.sha256"
+      - name: Publish side-by-side preview directly to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="geckoview-preview-${SOURCE_SHA:0:12}"
+          apk="app/build/outputs/apk/preview/app-preview.apk"
+          asset="StreamCatch-GeckoView-${tag}.apk"
+          checksum="$RUNNER_TEMP/streamcatch-gecko-preview.sha256"
+          notes="PR #7 experimental GeckoView/uBlock Origin preview. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${apk}#${asset}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$tag" "${checksum}#${asset}.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${apk}#${asset}" "${checksum}#${asset}.sha256" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch GeckoView ${tag} (EXPERIMENTAL)" --notes "$notes" --prerelease
+          fi
+
   publish-signed-apk:
     if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_signed_apk) }}
     runs-on: ubuntu-latest
