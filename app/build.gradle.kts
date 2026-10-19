@@ -80,5 +80,8 @@ dependencies {
     debugImplementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
     releaseImplementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
     add("previewImplementation", "org.mozilla.geckoview:geckoview-arm64-v8a:158.0.20261007201254")
+    // Real VLC decoding engine, not a dependency on the external VLC app.
+    // LibVLC for Android 3.6.1 (LGPL-2.1). Preview ABI filtering remains ARM64-only.
+    implementation("org.videolan.android:libvlc-all:3.6.1")
     testImplementation("junit:junit:4.13.2")
 }
