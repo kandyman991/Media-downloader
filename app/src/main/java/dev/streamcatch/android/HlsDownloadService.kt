@@ -44,6 +44,8 @@ class HlsDownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Ensure the download worker uses the same Gecko profile as the browser.
+        StreamCatchGeckoRuntime.get(applicationContext)
         notifications = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notifications.createNotificationChannel(
             NotificationChannel(CHANNEL, "StreamCatch downloads", NotificationManager.IMPORTANCE_LOW)
@@ -84,7 +86,7 @@ class HlsDownloadService : Service() {
 
     private fun download(url: String, agent: String, referrer: String) {
         val media = when (val playlist = HlsPlaylistParser.parse(
-            url, HlsHttp.loadPlaylist(url, agent, referrer)
+            url, HlsHttp.loadPlaylist(applicationContext, url, agent, referrer)
         )) {
             is HlsPlaylist.Video -> playlist
             is HlsPlaylist.Master -> throw IOException("Select a quality first")
@@ -97,7 +99,7 @@ class HlsDownloadService : Service() {
             FileOutputStream(temp).use { output ->
                 media.segments.forEachIndexed { index, segment ->
                     if (cancel.get()) throw DownloadCancelled()
-                    HlsHttp.appendTransportStream(segment, agent, referrer, output) { cancel.get() }
+                    HlsHttp.appendTransportStream(applicationContext, segment, agent, referrer, output) { cancel.get() }
                     notifications.notify(NOTIFICATION_ID, progressNotification(
                         "Downloading: ${index + 1}/${media.segments.size} segments",
                         index + 1, media.segments.size
