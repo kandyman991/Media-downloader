@@ -61,6 +61,26 @@ class MediaCenterActivity : Activity() {
         }
         actions.addView(refresh, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(actions)
+        root.addView(TextView(this).apply {
+            text = "LibVLC engine by VideoLAN · LGPL 2.1 · About"
+            textSize = 12f
+            setTextColor(Color.rgb(169, 203, 245))
+            setPadding(4.dp, 4.dp, 4.dp, 4.dp)
+            setOnClickListener {
+                android.app.AlertDialog.Builder(this@MediaCenterActivity)
+                    .setTitle("About the player")
+                    .setMessage(
+                        "StreamCatch uses the official VideoLAN LibVLC Android engine (3.6.1) " +
+                        "to play your own offline files.\n\n" +
+                        "LibVLC is licensed under LGPL-2.1. VLC project and source: " +
+                        "https://www.videolan.org/ and https://code.videolan.org/videolan/vlc-android.\n\n" +
+                        "No separate VLC app is required. Streaming-service DRM and expiration " +
+                        "are not modified or bypassed."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        })
         summary = TextView(this).apply { textSize = 13f; setTextColor(Color.LTGRAY); setPadding(4.dp, 12.dp, 4.dp, 10.dp) }
         root.addView(summary)
         val scroll = ScrollView(this)
