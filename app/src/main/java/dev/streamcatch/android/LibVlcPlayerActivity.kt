@@ -394,6 +394,7 @@ class LibVlcPlayerActivity : Activity() {
                             if (position > 0L) mediaPlayer.time = position
                         }
                         info.text = "Playing locally · LibVLC (${if (useTextureView) "Texture" else "Surface"})"
+                        scheduleHideControls()
                     }
                     MediaPlayer.Event.EndReached -> runOnUiThread { info.text = "Playback finished" }
                     MediaPlayer.Event.EncounteredError -> runOnUiThread {
