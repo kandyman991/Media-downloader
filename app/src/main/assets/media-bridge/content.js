@@ -15,7 +15,7 @@ function scan() {
     add(el.src);
   }
   for (const resource of performance.getEntriesByType("resource")) add(resource.name);
-  if (found.length) browser.runtime.sendMessage({ type: "media", urls: found.slice(0, 250) }).catch(() => {});
+  if (found.length) browser.runtime.sendMessage({ type: "media", urls: found.slice(0, 250), frameOrigin: window.location.origin }).catch(() => {});
 }
 let scheduled = false;
 function scheduleScan() {
