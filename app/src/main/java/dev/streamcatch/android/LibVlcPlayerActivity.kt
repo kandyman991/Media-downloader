@@ -179,18 +179,11 @@ class LibVlcPlayerActivity : Activity() {
             engine = vlc
             val mediaPlayer = MediaPlayer(vlc)
             player = mediaPlayer
-            // The high-level VideoHelper enables the video track, handles
-            // surface lifetime, window size, aspect ratio and rotations.
-            // TextureView avoids the surface-compositor path that produced
-            // black frames while audio/time were still progressing on Samsung.
+            // VideoHelper enables the video track and automatically handles
+            // surface lifetime, size, aspect ratio and screen rotation.
+            // Use TextureView first because the raw SurfaceView path rendered
+            // black video (even though audio and position were correct).
             mediaPlayer.attachViews(videoLayout, null, false, true)
-            videoContainer.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-                if (right - left > 0 && bottom - top > 0 &&
-                    (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
-                ) {
-                    player?.updateVideoSurfaces()
-                }
-            }
             mediaPlayer.setEventListener { event ->
                 when (event.type) {
                     MediaPlayer.Event.Playing -> runOnUiThread { info.text = "Playing locally · LibVLC" }
