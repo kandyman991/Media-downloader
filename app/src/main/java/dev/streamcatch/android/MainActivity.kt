@@ -212,9 +212,9 @@ class MainActivity : Activity() {
         // Never trust an arbitrary URL as a Referer and never pass signed URL queries.
         val origin = observedOrigin?.let { dev.streamcatch.android.core.HlsRequestPolicy.safeReferrerOrigin(it) }
         val evidence = when {
-            origin == null -> 0
             foundBy == "Browser headers" -> 2
-            else -> 1
+            origin != null -> 1
+            else -> 0
         }
         runOnUiThread {
             if (closed) return@runOnUiThread
@@ -254,7 +254,9 @@ class MainActivity : Activity() {
             .setItems(labels) { _, index ->
                 val item = items[index]
                 if (item.kind.isDirect) downloadDirect(item.url, item.kind, GeckoSession.getDefaultUserAgent())
-                else if (item.kind == MediaKind.HLS) prepareHls(item.url, item.referrerOrigin)
+                else if (item.kind == MediaKind.HLS) {
+                    prepareHls(item.url, item.referrerOrigin, item.referrerEvidence == 2)
+                }
                 else AlertDialog.Builder(this)
                     .setTitle(item.kind.label)
                     .setMessage("DASH is detected, but downloading it is planned for milestone M3.")
@@ -268,9 +270,15 @@ class MainActivity : Activity() {
      * Fetch and parse the selected HLS playlist away from the UI thread.
      * A master playlist yields a quality picker; a media playlist downloads directly.
      */
-    private fun prepareHls(url: String, observedReferrerOrigin: String? = null) {
+    private fun prepareHls(
+        url: String, observedReferrerOrigin: String? = null, hasObservedBrowserHeader: Boolean = false
+    ) {
         val ua = GeckoSession.getDefaultUserAgent()
-        val referrer = observedReferrerOrigin ?: currentUrl
+        // An observed missing Referer is meaningful. Never fabricate one.
+        // For page-scan candidates without observed request headers, prefer
+        // their actual iframe origin; retain top-level fallback for legacy cases.
+        val referrer = if (hasObservedBrowserHeader) observedReferrerOrigin.orEmpty()
+            else observedReferrerOrigin ?: currentUrl
         Toast.makeText(this, "Checking HLS qualities…", Toast.LENGTH_SHORT).show()
         Thread {
             try {
