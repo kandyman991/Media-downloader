@@ -9,7 +9,8 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.text.TextUtils
 import android.view.Gravity
-import android.view.SurfaceView
+import android.widget.FrameLayout
+import org.videolan.libvlc.util.VLCVideoLayout
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
@@ -34,7 +35,8 @@ class LibVlcPlayerActivity : Activity() {
     private var engine: LibVLC? = null
     private var player: MediaPlayer? = null
     private var descriptor: ParcelFileDescriptor? = null
-    private lateinit var surface: SurfaceView
+    private lateinit var videoLayout: VLCVideoLayout
+    private lateinit var videoContainer: FrameLayout
     private lateinit var playPause: Button
     private lateinit var current: TextView
     private lateinit var total: TextView
@@ -78,10 +80,16 @@ class LibVlcPlayerActivity : Activity() {
             setPadding(12.dp, 0, 0, 0)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(header)
-        surface = SurfaceView(this).apply {
-            setBackgroundColor(Color.BLACK)
-        }
-        root.addView(surface, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        // Keep the weighted sizing on a container: VLCVideoLayout itself uses
+        // MATCH_PARENT when attached, and must receive real measured dimensions.
+        videoContainer = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        videoLayout = VLCVideoLayout(this)
+        videoContainer.addView(videoLayout, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        root.addView(videoContainer, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
         info = TextView(this).apply {
             text = "Opening offline video…"
             textSize = 12f
@@ -171,8 +179,18 @@ class LibVlcPlayerActivity : Activity() {
             engine = vlc
             val mediaPlayer = MediaPlayer(vlc)
             player = mediaPlayer
-            mediaPlayer.vlcVout.setVideoView(surface)
-            mediaPlayer.vlcVout.attachViews()
+            // The high-level VideoHelper enables the video track, handles
+            // surface lifetime, window size, aspect ratio and rotations.
+            // TextureView avoids the surface-compositor path that produced
+            // black frames while audio/time were still progressing on Samsung.
+            mediaPlayer.attachViews(videoLayout, null, false, true)
+            videoContainer.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                if (right - left > 0 && bottom - top > 0 &&
+                    (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
+                ) {
+                    player?.updateVideoSurfaces()
+                }
+            }
             mediaPlayer.setEventListener { event ->
                 when (event.type) {
                     MediaPlayer.Event.Playing -> runOnUiThread { info.text = "Playing locally · LibVLC" }
@@ -246,7 +264,7 @@ class LibVlcPlayerActivity : Activity() {
     private fun closePlayer() {
         player?.let { mp ->
             runCatching { mp.stop() }
-            runCatching { mp.vlcVout.detachViews() }
+            runCatching { mp.detachViews() }
             runCatching { mp.release() }
         }
         player = null
