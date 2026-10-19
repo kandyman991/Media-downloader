@@ -10,13 +10,14 @@ import java.net.URI
 object HlsRequestPolicy {
     fun httpsHost(url: String): String? {
         val uri = MediaUrlDetector.parseHttps(url) ?: return null
+        if (uri.rawUserInfo != null) return null
         return uri.host
     }
 
     fun safeReferrerOrigin(url: String): String? {
         val uri = MediaUrlDetector.parseHttps(url) ?: return null
         if (uri.rawUserInfo != null) return null
-        val port = if (uri.port == -1 || uri.port == 443) "" else ":${uri.port}"
-        return "https://${uri.host}${port}/"
+        val port = if (uri.port == 443) -1 else uri.port
+        return URI("https", null, uri.host, port, "/", null, null).toASCIIString()
     }
 }
