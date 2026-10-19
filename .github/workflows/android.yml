@@ -68,11 +68,11 @@ jobs:
             "app/build/outputs/apk/release/app-release.apk"
           rm -f "$keyfile"
 
-  # Explicitly limited to trusted PR #7. No release signing secrets.
+  # Limited to trusted stacked PR #11. No stable signing secrets.
   # APK goes straight to GitHub Releases, never Actions artifact storage.
   publish-geckoview-preview:
     needs: verify
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 7 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/geckoview-ublock-foundation' && github.event.pull_request.base.ref == 'main' }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 11 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/media-center-libvlc' && github.event.pull_request.base.ref == 'feature/geckoview-ublock-foundation' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -110,6 +110,10 @@ jobs:
           # The preview must contain only ARM64 GeckoView native code, not a fat multi-ABI engine.
           unzip -Z1 "$apk" > "$RUNNER_TEMP/preview-entry-list.txt"
           grep -q '^lib/arm64-v8a/' "$RUNNER_TEMP/preview-entry-list.txt"
+          grep -q '^lib/arm64-v8a/libvlc.so$' "$RUNNER_TEMP/preview-entry-list.txt" || {
+            echo "::error::Expected LibVLC native library missing from preview"
+            exit 1
+          }
           if grep -E '^lib/(armeabi-v7a|x86|x86_64)/' "$RUNNER_TEMP/preview-entry-list.txt"; then
             echo "::error::Preview unexpectedly contains non-ARM64 native libraries"
             exit 1
@@ -124,23 +128,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="geckoview-preview-${SOURCE_SHA:0:12}"
+          tag="media-center-preview-${SOURCE_SHA:0:12}"
           apk="app/build/outputs/apk/preview/app-preview.apk"
-          asset="StreamCatch-GeckoView-${tag}.apk"
+          asset="StreamCatch-MediaCenter-${tag}.apk"
           # gh release upload PATH#LABEL only changes a display label; the real download
           # URL retains the original filename. Rename the physical file first.
           published_apk="$RUNNER_TEMP/$asset"
           published_checksum="$RUNNER_TEMP/$asset.sha256"
           cp "$apk" "$published_apk"
           (cd "$RUNNER_TEMP" && sha256sum "$asset" > "$asset.sha256")
-          notes="PR #7 experimental GeckoView/uBlock Origin preview. ARM64 Android devices only. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
+          notes="PR #11 experimental Media Center / LibVLC preview (built on GeckoView PR #7). ARM64 Android devices only. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "$published_apk" "$published_checksum" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" "$published_apk" "$published_checksum" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch GeckoView ${tag} (ARM64 EXPERIMENTAL)" --notes "$notes" --prerelease
+            gh release create "$tag" "$published_apk" "$published_checksum" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch Media Center ${tag} (ARM64 EXPERIMENTAL)" --notes "$notes" --prerelease
           fi
 
   publish-signed-apk:

@@ -174,6 +174,9 @@ class MainActivity : Activity() {
         footer.addView(btn("Scan page") { scanPage() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         mediaButton = btn("Videos (0)") { showMedia() }
         footer.addView(mediaButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        footer.addView(btn("Library ▶") {
+            startActivity(Intent(this, MediaCenterActivity::class.java))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         layout.addView(footer)
         setContentView(layout)
     }
