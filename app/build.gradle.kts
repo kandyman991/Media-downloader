@@ -49,6 +49,8 @@ android {
             manifestPlaceholders["appLabel"] = "StreamCatch Preview"
             matchingFallbacks.add("debug")
             signingConfig = signingConfigs.getByName("debug")
+            // Match the single-ABI GeckoView preview artifact.
+            ndk.abiFilters.add("arm64-v8a")
         }
         release {
             isMinifyEnabled = false
@@ -72,7 +74,11 @@ kotlin {
 }
 
 dependencies {
-    // Pinned Mozilla stable GeckoView; change with security updates after regression tests.
-    implementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
+    // Keep universal GeckoView for debug/release builds; only the side-by-side
+    // preview uses Mozilla's official ARM64-only AAR to reduce download size.
+    // This must not silently limit the signed stable release to ARM64.
+    debugImplementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
+    releaseImplementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
+    previewImplementation("org.mozilla.geckoview:geckoview-arm64-v8a:158.0.20261007201254")
     testImplementation("junit:junit:4.13.2")
 }
