@@ -68,11 +68,11 @@ jobs:
             "app/build/outputs/apk/release/app-release.apk"
           rm -f "$keyfile"
 
-  # Explicitly limited to trusted PR #7. No release signing secrets.
+  # Explicitly limited to the trusted stacked PR #11 (no signing secrets).
   # APK goes straight to GitHub Releases, never Actions artifact storage.
   publish-geckoview-preview:
     needs: verify
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && ((github.event.pull_request.number == 7 && github.event.pull_request.head.ref == 'feature/geckoview-ublock-foundation' && github.event.pull_request.base.ref == 'main') || (github.event.pull_request.number == 11 && github.event.pull_request.head.ref == 'feature/media-center-libvlc' && github.event.pull_request.base.ref == 'feature/geckoview-ublock-foundation')) }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 11 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/media-center-libvlc' && github.event.pull_request.base.ref == 'feature/geckoview-ublock-foundation' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
