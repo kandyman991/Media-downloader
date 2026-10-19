@@ -134,12 +134,15 @@ class HlsDownloadService : Service() {
                 notifications.notify(NOTIFICATION_ID, progressNotification("Saving compatible TS fallback", 0, 0))
                 saveTransportStream(temp, base)
             }
-            val label = when {
-                saved.isMp4 && saved.hasAudio == true -> "MP4 with a readable audio track"
-                saved.isMp4 -> "video-only MP4 — no audio track in the selected stream"
-                else -> "TS (MP4 remux unavailable for this stream/device)"
+            val resultMessage = when {
+                saved.isMp4 && saved.hasAudio == true ->
+                    "Saved MP4 with AAC audio track to Downloads/StreamCatch"
+                saved.isMp4 ->
+                    "Saved VIDEO-ONLY MP4 (no audio track detected). Separate HLS audio may be needed."
+                else ->
+                    "Saved TS fallback to Downloads/StreamCatch (MP4 remux unavailable)"
             }
-            showResult("Saved $label to Downloads/StreamCatch", true, saved.uri, saved.mime)
+            showResult(resultMessage, true, saved.uri, saved.mime)
         } finally {
             temp.delete()
         }
