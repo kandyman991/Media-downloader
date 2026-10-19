@@ -41,9 +41,17 @@ class UblockOriginManager(
                 origins: Array<String>,
                 dataCollectionPermissions: Array<String>
             ): GeckoResult<WebExtension.PermissionPromptResponse> {
-                val accepted = installationApproved && extension.id == EXTENSION_ID
+                val requested = installationApproved && extension.id == EXTENSION_ID
                 installationApproved = false
-                return GeckoResult.fromValue(WebExtension.PermissionPromptResponse(accepted, false, false))
+                if (!requested) {
+                    return GeckoResult.fromValue(WebExtension.PermissionPromptResponse(false, false, false))
+                }
+                return askForPermissions(
+                    "Confirm uBlock Origin installation permissions",
+                    permissions, origins, dataCollectionPermissions
+                ).map { decision ->
+                    WebExtension.PermissionPromptResponse(decision == AllowOrDeny.ALLOW, false, false)
+                }
             }
 
             override fun onOptionalPrompt(
@@ -52,7 +60,12 @@ class UblockOriginManager(
                 origins: Array<String>,
                 dataCollectionPermissions: Array<String>
             ): GeckoResult<AllowOrDeny> =
-                askForPermissions("Additional uBlock Origin permissions requested", permissions, origins)
+                if (extension.id == EXTENSION_ID) {
+                    askForPermissions(
+                        "Additional uBlock Origin permissions requested",
+                        permissions, origins, dataCollectionPermissions
+                    )
+                } else GeckoResult.fromValue(AllowOrDeny.DENY)
 
             override fun onUpdatePrompt(
                 extension: WebExtension,
@@ -60,7 +73,12 @@ class UblockOriginManager(
                 newOrigins: Array<String>,
                 newDataCollectionPermissions: Array<String>
             ): GeckoResult<AllowOrDeny> =
-                askForPermissions("uBlock Origin update requires new permissions", newPermissions, newOrigins)
+                if (extension.id == EXTENSION_ID) {
+                    askForPermissions(
+                        "uBlock Origin update requires new permissions",
+                        newPermissions, newOrigins, newDataCollectionPermissions
+                    )
+                } else GeckoResult.fromValue(AllowOrDeny.DENY)
         })
         controller.list().accept({ addons ->
             addons?.firstOrNull { it.id == EXTENSION_ID }?.let(::activate)
@@ -70,9 +88,18 @@ class UblockOriginManager(
         })
     }
 
-    private fun askForPermissions(title: String, permissions: Array<String>, origins: Array<String>): GeckoResult<AllowOrDeny> {
+    private fun askForPermissions(
+        title: String,
+        permissions: Array<String>,
+        origins: Array<String>,
+        dataCollectionPermissions: Array<String>
+    ): GeckoResult<AllowOrDeny> {
         val result = GeckoResult<AllowOrDeny>()
-        val details = (permissions.toList() + origins.toList()).joinToString("\n").ifBlank { "Additional permissions" }
+        val details = buildList {
+            addAll(permissions.map { "Permission: $it" })
+            addAll(origins.map { "Website: $it" })
+            addAll(dataCollectionPermissions.map { "Data collection: $it" })
+        }.joinToString("\n").ifBlank { "Additional permissions" }
         activity.runOnUiThread {
             AlertDialog.Builder(activity).setTitle(title).setMessage(details)
                 .setPositiveButton("Allow") { _, _ -> result.complete(AllowOrDeny.ALLOW) }
