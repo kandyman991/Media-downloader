@@ -20,6 +20,14 @@ object Mp4RemuxPolicy {
             other.all { it.startsWith("application/") }
     }
 
+    /**
+     * Missing audio is acceptable only if the selected source itself has no
+     * detected audio; in that case the app must clearly label video-only output.
+     * A source that actually contained audio must never silently lose it.
+     */
+    fun preservesAudio(sourceHasAudio: Boolean, outputHasAudio: Boolean): Boolean =
+        !sourceHasAudio || outputHasAudio
+
     /** TS may carry non-zero clock offsets. MP4 samples should start near time zero. */
     fun relativePts(sampleTimeUs: Long, firstTimeUs: Long): Long {
         require(firstTimeUs >= 0 && sampleTimeUs >= 0) { "Invalid transport-stream timestamps" }
