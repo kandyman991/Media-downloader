@@ -168,6 +168,7 @@ class MainActivity : Activity() {
             }
         }
         geckoView.setSession(browserSession)
+        runtime.webExtensionController.setTabActive(browserSession, true)
         layout.addView(geckoView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -330,6 +331,20 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("lastUrl", currentUrl)
         super.onSaveInstanceState(outState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::runtime.isInitialized && ::browserSession.isInitialized) {
+            runtime.webExtensionController.setTabActive(browserSession, true)
+        }
+    }
+
+    override fun onPause() {
+        if (::runtime.isInitialized && ::browserSession.isInitialized) {
+            runtime.webExtensionController.setTabActive(browserSession, false)
+        }
+        super.onPause()
     }
 
     override fun onDestroy() {
