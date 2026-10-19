@@ -72,7 +72,7 @@ jobs:
   # APK goes straight to GitHub Releases, never Actions artifact storage.
   publish-geckoview-preview:
     needs: verify
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 7 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/geckoview-ublock-foundation' && github.event.pull_request.base.ref == 'main' }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && ((github.event.pull_request.number == 7 && github.event.pull_request.head.ref == 'feature/geckoview-ublock-foundation' && github.event.pull_request.base.ref == 'main') || (github.event.pull_request.number == 11 && github.event.pull_request.head.ref == 'feature/media-center-libvlc' && github.event.pull_request.base.ref == 'feature/geckoview-ublock-foundation')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -110,6 +110,8 @@ jobs:
           # The preview must contain only ARM64 GeckoView native code, not a fat multi-ABI engine.
           unzip -Z1 "$apk" > "$RUNNER_TEMP/preview-entry-list.txt"
           grep -q '^lib/arm64-v8a/' "$RUNNER_TEMP/preview-entry-list.txt"
+          if [[ "${{ github.event.pull_request.number }}" == "11" ]]; then
+            grep -q '^lib/arm64-v8a/libvlc.so
           if grep -E '^lib/(armeabi-v7a|x86|x86_64)/' "$RUNNER_TEMP/preview-entry-list.txt"; then
             echo "::error::Preview unexpectedly contains non-ARM64 native libraries"
             exit 1
@@ -124,23 +126,159 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="geckoview-preview-${SOURCE_SHA:0:12}"
+          if [[ "$PR_NUMBER" == "11" ]]; then
+            tag="media-center-preview-${SOURCE_SHA:0:12}"
+            asset="StreamCatch-MediaCenter-${tag}.apk"
+          else
+            tag="geckoview-preview-${SOURCE_SHA:0:12}"
+            asset="StreamCatch-GeckoView-${tag}.apk"
+          fi
           apk="app/build/outputs/apk/preview/app-preview.apk"
-          asset="StreamCatch-GeckoView-${tag}.apk"
           # gh release upload PATH#LABEL only changes a display label; the real download
           # URL retains the original filename. Rename the physical file first.
           published_apk="$RUNNER_TEMP/$asset"
           published_checksum="$RUNNER_TEMP/$asset.sha256"
           cp "$apk" "$published_apk"
           (cd "$RUNNER_TEMP" && sha256sum "$asset" > "$asset.sha256")
-          notes="PR #7 experimental GeckoView/uBlock Origin preview. ARM64 Android devices only. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
+          notes="Experimental PR #${PR_NUMBER} StreamCatch GeckoView/LibVLC preview. ARM64 Android devices only. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "$published_apk" "$published_checksum" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" "$published_apk" "$published_checksum" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch GeckoView ${tag} (ARM64 EXPERIMENTAL)" --notes "$notes" --prerelease
+            gh release create "$tag" "$published_apk" "$published_checksum" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch ${tag} (ARM64 EXPERIMENTAL)" --notes "$notes" --prerelease
+          fi
+
+  publish-signed-apk:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[apk]')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_signed_apk) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bundled GeckoView media extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/media-bridge/background.js
+          node --check app/src/main/assets/media-bridge/content.js
+          node tools/test-media-bridge.cjs
+          python3 -c 'import json; m=json.load(open("app/src/main/assets/media-bridge/manifest.json")); assert m["browser_specific_settings"]["gecko"]["id"] == "streamcatch-media@local"; assert {"geckoViewAddons", "nativeMessaging", "webRequest"}.issubset(m["permissions"])'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android 37 SDK from runner-provided tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+          cache-disabled: true
+      - name: Prepare private signing keystore
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.STREAMCATCH_KEYSTORE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.STREAMCATCH_SIGNING_PASSWORD }}
+          SIGNING_ALIAS: ${{ secrets.STREAMCATCH_SIGNING_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_B64" || -z "$SIGNING_PASSWORD" || -z "$SIGNING_ALIAS" ]]; then
+            echo "::error::Stable Android signing is not configured. Run tools/configure-release-signing.sh on your trusted computer."
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/streamcatch-signing.p12"
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$keystore"
+          test -s "$keystore"
+          echo "STREAMCATCH_SIGNING_STORE_FILE=$keystore" >> "$GITHUB_ENV"
+      - name: Test and compile signed release APK
+        env:
+          STREAMCATCH_SIGNING_PASSWORD: ${{ secrets.STREAMCATCH_SIGNING_PASSWORD }}
+          STREAMCATCH_SIGNING_ALIAS: ${{ secrets.STREAMCATCH_SIGNING_ALIAS }}
+        run: gradle :app:testDebugUnitTest :app:assembleRelease --no-daemon --no-build-cache
+      - name: Verify signed APK and compute checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release.apk"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          "$SDK/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
+          sha256sum "$apk" > "$RUNNER_TEMP/streamcatch-release.sha256"
+      - name: Publish signed APK as GitHub Release asset (not Actions artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="snapshot-${GITHUB_SHA:0:12}"
+          fi
+          apk="app/build/outputs/apk/release/app-release.apk"
+          asset="StreamCatch-Android-${tag}-signed.apk"
+          checksum="$RUNNER_TEMP/streamcatch-release.sha256"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${apk}#${asset}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$tag" "${checksum}#${asset}.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${apk}#${asset}" "${checksum}#${asset}.sha256" --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+              --title "StreamCatch Android ${tag} (signed test APK)" --generate-notes --prerelease
+      - name: Remove private signing material from runner
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${STREAMCATCH_SIGNING_STORE_FILE:-}" ]]; then
+            rm -f -- "$STREAMCATCH_SIGNING_STORE_FILE"
+          fi
+ "$RUNNER_TEMP/preview-entry-list.txt" || {
+              echo "::error::Media-center preview must package the actual LibVLC engine"
+              exit 1
+            }
+          fi
+          if grep -E '^lib/(armeabi-v7a|x86|x86_64)/' "$RUNNER_TEMP/preview-entry-list.txt"; then
+            echo "::error::Preview unexpectedly contains non-ARM64 native libraries"
+            exit 1
+          fi
+          bytes="$(stat -c%s "$apk")"
+          echo "Preview APK bytes: $bytes"
+          if (( bytes > 314572800 )); then
+            echo "::error::Preview APK is over 300 MiB. Do not release oversized multi-ABI build."
+            exit 1
+          fi
+      - name: Publish side-by-side preview directly to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PR_NUMBER" == "11" ]]; then
+            tag="media-center-preview-${SOURCE_SHA:0:12}"
+            asset="StreamCatch-MediaCenter-${tag}.apk"
+          else
+            tag="geckoview-preview-${SOURCE_SHA:0:12}"
+            asset="StreamCatch-GeckoView-${tag}.apk"
+          fi
+          apk="app/build/outputs/apk/preview/app-preview.apk"
+          # gh release upload PATH#LABEL only changes a display label; the real download
+          # URL retains the original filename. Rename the physical file first.
+          published_apk="$RUNNER_TEMP/$asset"
+          published_checksum="$RUNNER_TEMP/$asset.sha256"
+          cp "$apk" "$published_apk"
+          (cd "$RUNNER_TEMP" && sha256sum "$asset" > "$asset.sha256")
+          notes="Experimental PR #${PR_NUMBER} StreamCatch GeckoView/LibVLC preview. ARM64 Android devices only. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "$published_apk" "$published_checksum" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "$published_apk" "$published_checksum" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch ${tag} (ARM64 EXPERIMENTAL)" --notes "$notes" --prerelease
           fi
 
   publish-signed-apk:
