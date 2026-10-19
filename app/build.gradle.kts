@@ -52,5 +52,7 @@ android {
 }
 
 dependencies {
+    // Pinned Mozilla stable GeckoView; change with security updates after regression tests.
+    implementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
     testImplementation("junit:junit:4.13.2")
 }
