@@ -41,3 +41,13 @@ This feature is deliberately **stacked on** `feature/geckoview-ublock-foundation
 - No automatic scanning of every storage folder or private app content.
 - No DRM removal, no modification of Netflix/Prime download policies.
 - Preview uses disposable debug key, so uninstall only old **StreamCatch Preview** before new preview tests.
+
+## M1.1 — Player UI + immersive landscape (implemented, device acceptance pending)
+
+- **Device baseline confirmed:** LibVLC TextureView displays actual frames and plays sound in Samsung landscape (screenshot at 00:09/1:25:33) after the black-screen fix, release `media-center-preview-9d960cfa8a3c`. No need to change HLS downloader or switch video renderer.
+- The previous large browser-style control rows are replaced by **full-bleed video with controls layered over it**. Single tap shows/hides translucent top and bottom controls, which auto-hide during playing. The video does not shrink to make room for buttons.
+- Top overlay: back to Library, filename, **fullscreen landscape toggle**. In fullscreen, hide both Android system bars using immersive transient-by-swipe behavior. Exit via the fullscreen button or Android Back; orientation changes do not destroy LibVLC's file descriptor/decoder because `LibVlcPlayerActivity` handles `orientation|screenSize|keyboardHidden`.
+- Bottom overlay: timeline scrubbing with position preview, timestamps, play/pause, ±10 s, playback speed cycle 1×/1.25×/1.5×/2×/0.75×, optional Texture/Surface compatibility switch in a menu.
+- Gestures: single tap reveals/hides controls, double-tap left/right 10-second rewind/forward, double-tap center play/pause. Large tap targets and white controls over gradient for phone/tablet.
+- **Runtime acceptance required:** immersive landscape truly uses all screen space, video scales to fit without distortion, controls respond and auto-hide, audio+video stay synchronized after scrubbing, rotations/back do not kill playback, pause resumes correctly, video works offline. No claim of device success for this UI until retested.
+- No network/storage changes and no Actions artifacts. Stacked draft PR #11 remains unmerged.
