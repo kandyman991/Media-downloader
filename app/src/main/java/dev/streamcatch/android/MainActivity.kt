@@ -15,14 +15,6 @@ import android.os.Environment
 import android.view.Gravity
 import android.view.WindowInsets
 import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.DownloadListener
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -32,28 +24,52 @@ import dev.streamcatch.android.core.MediaKind
 import dev.streamcatch.android.core.MediaUrlDetector
 import dev.streamcatch.android.core.HlsPlaylist
 import dev.streamcatch.android.core.HlsPlaylistParser
-import org.json.JSONArray
-import org.json.JSONTokener
 import java.util.LinkedHashMap
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebResponse
 
 /** Android-first MVP: HTTPS page inspection + OS-managed direct downloads. */
 class MainActivity : Activity() {
     private data class MediaCandidate(val url: String, val kind: MediaKind, val discoveredBy: String)
 
-    private lateinit var webView: WebView
+    private lateinit var geckoView: GeckoView
+    private lateinit var browserSession: GeckoSession
+    private lateinit var runtime: GeckoRuntime
+    private lateinit var mediaBridge: GeckoMediaBridge
+    private lateinit var blocker: UblockOriginManager
+    private var currentUrl = ""
+    private var canGoBack = false
     private lateinit var address: EditText
     private lateinit var mediaButton: Button
+    private lateinit var blockerButton: Button
     private lateinit var progress: ProgressBar
     private val media = LinkedHashMap<String, MediaCandidate>()
     private var closed = false
 
+    companion object {
+        @Volatile private var appRuntime: GeckoRuntime? = null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        runtime = appRuntime ?: GeckoRuntime.create(applicationContext).also { appRuntime = it }
+        browserSession = GeckoSession()
+        browserSession.open(runtime)
+        mediaBridge = GeckoMediaBridge { url, source -> registerMedia(url, null, source) }
         makeUi()
+        mediaBridge.install(runtime)
+        blocker = UblockOriginManager(this, runtime, browserSession) { active ->
+            runOnUiThread { if (!closed) blockerButton.text = if (active) "uBO ✓" else "uBO" }
+        }
+        blocker.initialize()
         if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState)
+            navigate(savedInstanceState.getString("lastUrl").orEmpty().ifBlank { "https://example.org" })
         } else {
-            openSharedPage(intent) || navigate("https://example.org")
+            if (!openSharedPage(intent)) navigate("https://example.org")
         }
     }
 
@@ -78,7 +94,7 @@ class MainActivity : Activity() {
             this.text = text
             setOnClickListener { action() }
         }
-        toolbar.addView(btn("‹") { if (webView.canGoBack()) webView.goBack() }, LinearLayout.LayoutParams(54.dp, ViewGroup.LayoutParams.WRAP_CONTENT))
+        toolbar.addView(btn("‹") { if (canGoBack) browserSession.goBack() }, LinearLayout.LayoutParams(54.dp, ViewGroup.LayoutParams.WRAP_CONTENT))
         address = EditText(this).apply {
             hint = "Enter a website URL"
             setSingleLine(true)
@@ -88,65 +104,71 @@ class MainActivity : Activity() {
         }
         toolbar.addView(address, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         toolbar.addView(btn("Go") { navigate(address.text.toString()) })
+        blockerButton = btn("uBO") { blocker.showControls() }
+        toolbar.addView(blockerButton)
         layout.addView(toolbar)
 
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
         layout.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 3.dp))
 
-        webView = WebView(this).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            settings.setSupportMultipleWindows(false)
-            isHorizontalScrollBarEnabled = false
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean {
-                    if (request.isForMainFrame && MediaUrlDetector.parseHttps(request.url.toString()) == null) {
-                        Toast.makeText(this@MainActivity, "Only HTTPS pages are supported", Toast.LENGTH_SHORT).show()
-                        return true
-                    }
-                    return false
-                }
-
-                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                    clearMedia()
-                    address.setText(url.orEmpty())
-                    this@MainActivity.progress.progress = 0
-                }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    scanPage()
-                }
-
-                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
-                    if (request.method.equals("GET", ignoreCase = true)) {
-                        registerMedia(request.url.toString(), null, "Network")
-                    }
-                    // Never proxy or modify playback. Let WebView perform the request.
-                    return null
-                }
+        geckoView = GeckoView(this)
+        browserSession.navigationDelegate = object : GeckoSession.NavigationDelegate {
+            override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
+                this@MainActivity.canGoBack = canGoBack
             }
-            webChromeClient = object : WebChromeClient() {
-                override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                    this@MainActivity.progress.progress = newProgress
-                }
+            override fun onLocationChange(
+                session: GeckoSession, url: String?,
+                perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean
+            ) {
+                currentUrl = url.orEmpty()
+                address.setText(currentUrl)
             }
-            setDownloadListener(DownloadListener { url, userAgent, _, mimeType, _ ->
-                // MIME types can reveal videos without filename extensions.
-                val kind = MediaUrlDetector.classify(url, mimeType)
-                if (kind != null) {
-                    registerMedia(url, mimeType, "Browser download")
-                    if (kind.isDirect) downloadDirect(url, kind, userAgent)
-                    else if (kind == MediaKind.HLS) prepareHls(url)
-                    else Toast.makeText(this@MainActivity, "DASH download support is planned for M3", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this@MainActivity, "Unsupported download type", Toast.LENGTH_LONG).show()
+            override fun onLoadRequest(
+                session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest
+            ): GeckoResult<AllowOrDeny>? {
+                val url = request.uri
+                if (!url.startsWith("https://") && !url.startsWith("about:") &&
+                    !url.startsWith("moz-extension:")) {
+                    Toast.makeText(this@MainActivity, "Only HTTPS sites are supported", Toast.LENGTH_SHORT).show()
+                    return GeckoResult.deny()
                 }
-            })
+                return null
+            }
         }
-        layout.addView(webView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        browserSession.progressDelegate = object : GeckoSession.ProgressDelegate {
+            override fun onPageStart(session: GeckoSession, url: String) {
+                clearMedia()
+                currentUrl = url
+                address.setText(url)
+                this@MainActivity.progress.progress = 0
+            }
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                if (success) scanPage()
+            }
+            override fun onProgressChange(session: GeckoSession, progress: Int) {
+                this@MainActivity.progress.progress = progress
+            }
+        }
+        browserSession.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
+                try {
+                    val mime = response.headers.entries.firstOrNull {
+                        it.key.equals("Content-Type", ignoreCase = true)
+                    }?.value
+                    val kind = MediaUrlDetector.classify(response.uri, mime)
+                    if (kind != null) {
+                        registerMedia(response.uri, mime, "Browser download")
+                        if (kind.isDirect) downloadDirect(response.uri, kind, GeckoSession.getDefaultUserAgent())
+                        else if (kind == MediaKind.HLS) prepareHls(response.uri)
+                    }
+                } finally {
+                    response.body?.close()
+                }
+            }
+        }
+        geckoView.setSession(browserSession)
+        layout.addView(geckoView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         footer.addView(btn("Scan page") { scanPage() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -162,7 +184,7 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Enter a valid HTTPS URL", Toast.LENGTH_SHORT).show()
             return false
         }
-        webView.loadUrl(url)
+        browserSession.loadUri(url)
         return true
     }
 
@@ -322,7 +344,7 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        if (canGoBack) browserSession.goBack() else super.onBackPressed()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
