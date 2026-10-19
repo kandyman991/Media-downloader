@@ -106,7 +106,19 @@ jobs:
           "$SDK/build-tools/36.0.0/aapt" dump badging "$apk" |
             grep -F "package: name='dev.streamcatch.android.preview'" > /dev/null
           "$SDK/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
-          sha256sum "$apk" > "$RUNNER_TEMP/streamcatch-gecko-preview.sha256"
+          # The preview must contain only ARM64 GeckoView native code, not a fat multi-ABI engine.
+          unzip -Z1 "$apk" > "$RUNNER_TEMP/preview-entry-list.txt"
+          grep -q '^lib/arm64-v8a/' "$RUNNER_TEMP/preview-entry-list.txt"
+          if grep -E '^lib/(armeabi-v7a|x86|x86_64)/' "$RUNNER_TEMP/preview-entry-list.txt"; then
+            echo "::error::Preview unexpectedly contains non-ARM64 native libraries"
+            exit 1
+          fi
+          bytes="$(stat -c%s "$apk")"
+          echo "Preview APK bytes: $bytes"
+          if (( bytes > 314572800 )); then
+            echo "::error::Preview APK is over 300 MiB. Do not release oversized multi-ABI build."
+            exit 1
+          fi
       - name: Publish side-by-side preview directly to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -117,13 +129,17 @@ jobs:
           tag="geckoview-preview-${SOURCE_SHA:0:12}"
           apk="app/build/outputs/apk/preview/app-preview.apk"
           asset="StreamCatch-GeckoView-${tag}.apk"
-          checksum="$RUNNER_TEMP/streamcatch-gecko-preview.sha256"
-          notes="PR #7 experimental GeckoView/uBlock Origin preview. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
+          # gh release upload PATH#LABEL only changes a display label; the real download
+          # URL retains the original filename. Rename the physical file first.
+          published_apk="$RUNNER_TEMP/$asset"
+          published_checksum="$RUNNER_TEMP/$asset.sha256"
+          cp "$apk" "$published_apk"
+          (cd "$RUNNER_TEMP" && sha256sum "$asset" > "$asset.sha256")
+          notes="PR #7 experimental GeckoView/uBlock Origin preview. ARM64 Android devices only. Package dev.streamcatch.android.preview installs alongside the stable application. Debug signing is ephemeral: uninstall this preview before installing another preview signed on a different CI run. Browser and media behavior are not yet device-verified."
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$tag" "${apk}#${asset}" --clobber --repo "$GITHUB_REPOSITORY"
-            gh release upload "$tag" "${checksum}#${asset}.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$tag" "$published_apk" "$published_checksum" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" "${apk}#${asset}" "${checksum}#${asset}.sha256" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch GeckoView ${tag} (EXPERIMENTAL)" --notes "$notes" --prerelease
+            gh release create "$tag" "$published_apk" "$published_checksum" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "StreamCatch GeckoView ${tag} (ARM64 EXPERIMENTAL)" --notes "$notes" --prerelease
           fi
 
   publish-signed-apk:
