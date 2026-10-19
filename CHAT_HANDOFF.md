@@ -23,3 +23,10 @@ Verify that a signed GitHub Release APK built from the stable signing keystore u
 
 ## Handoff maintenance
 After each meaningful PR/milestone record the exact commit, tested build/run link, real-device validation and blockers. Update decision and failure registers when evidence changes. Do **not** assert an APK is current from a past handoff. ChatGPT chats are not mirrored here automatically.
+
+## 2026-10-19 GeckoView/uBlock migration work
+- PR **#7** (`feature/geckoview-ublock-foundation`) introduces GeckoView, a separate media-observer WebExtension and installation/management of official signed uBlock Origin.
+- **Do not infer green CI or real-device success from the PR.** Check current PR/CI; compare against main; fix compile/runtime issues as needed.
+- Critical acceptance gap: Android DownloadManager/HLS do **not** share GeckoView browsing cookies. Session-authenticated download parity is not proven.
+- Latest working signed release must remain available; do not squash with `[apk]` until feature passes actual device tests, including APK update certificate continuity.
+- Next actions: review CI, complete native popup/media tests, validate cookie-aware authenticated downloading, then decide on merge/release.
