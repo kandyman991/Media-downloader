@@ -21,7 +21,7 @@ class GeckoMediaBridge(
             "resource://android/assets/media-bridge/",
             "streamcatch-media@local"
         ).accept({ extension ->
-            extension.setMessageDelegate(object : WebExtension.MessageDelegate {
+            extension?.setMessageDelegate(object : WebExtension.MessageDelegate {
                 override fun onConnect(port: WebExtension.Port) {
                     nativePort = port
                     port.setDelegate(object : WebExtension.PortDelegate {
