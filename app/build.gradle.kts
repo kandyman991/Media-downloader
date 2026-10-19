@@ -79,6 +79,6 @@ dependencies {
     // This must not silently limit the signed stable release to ARM64.
     debugImplementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
     releaseImplementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
-    previewImplementation("org.mozilla.geckoview:geckoview-arm64-v8a:158.0.20261007201254")
+    add("previewImplementation", "org.mozilla.geckoview:geckoview-arm64-v8a:158.0.20261007201254")
     testImplementation("junit:junit:4.13.2")
 }
