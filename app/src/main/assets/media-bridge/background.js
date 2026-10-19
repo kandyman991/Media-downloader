@@ -12,7 +12,7 @@ function connect() {
     nativePort = port;
     port.onMessage.addListener(message => {
       if (message?.type === "scan") {
-        browser.tabs.query({}).then(tabs => {
+        browser.tabs.query({ active: true }).then(tabs => {
           for (const tab of tabs) {
             browser.tabs.sendMessage(tab.id, { type: "scan" }).catch(() => {});
           }
