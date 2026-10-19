@@ -30,3 +30,10 @@ After each meaningful PR/milestone record the exact commit, tested build/run lin
 - Critical acceptance gap: Android DownloadManager/HLS do **not** share GeckoView browsing cookies. Session-authenticated download parity is not proven.
 - Latest working signed release must remain available; do not squash with `[apk]` until feature passes actual device tests, including APK update certificate continuity.
 - Next actions: review CI, complete native popup/media tests, validate cookie-aware authenticated downloading, then decide on merge/release.
+
+## Verification evidence — 2026-10-19
+- Feature branch source commit `550bab526ea0c64af7f3ca8d534adaedf1f78c53` passed Android CI: `https://github.com/kandyman991/Media-downloader/actions/runs/39250226188`.
+- CI `verify` completed SUCCESS: unit tests, debug assemble and disposable-key signed release APK smoke test. The `publish-signed-apk` job was SKIPPED; **no APK or Actions artifact was uploaded**.
+- Successful compiler toolchain in this feature branch: Android compile SDK 37.0, AGP 9.1.1, Gradle 9.3.1, Kotlin Gradle plugin 2.4.20 with temporary AGP built-in Kotlin opt-out; targetSdk remains 35.
+- **Still NOT device-verified**: authentic uBO install/popup/dashboard/site filtering, GeckoView media detection and video playback, HLS/MP4/TS regressions, authenticated downloads, real device signing/update. PR #7 must remain open and unpublished pending device validation and issue #8.
+- **Next exact action:** test a debug preview APK on Android (without replacing installed signed app), verify GeckoView/uBO popup and media detection, then implement and test cookie-safe Gecko-native downloads before releasing.
