@@ -50,13 +50,9 @@ class MainActivity : Activity() {
     private val media = LinkedHashMap<String, MediaCandidate>()
     private var closed = false
 
-    companion object {
-        @Volatile private var appRuntime: GeckoRuntime? = null
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        runtime = appRuntime ?: GeckoRuntime.create(applicationContext).also { appRuntime = it }
+        runtime = StreamCatchGeckoRuntime.get(applicationContext)
         browserSession = GeckoSession()
         browserSession.open(runtime)
         mediaBridge = GeckoMediaBridge { url, source -> registerMedia(url, null, source) }
@@ -257,7 +253,7 @@ class MainActivity : Activity() {
         Toast.makeText(this, "Checking HLS qualities…", Toast.LENGTH_SHORT).show()
         Thread {
             try {
-                val playlist = HlsPlaylistParser.parse(url, HlsHttp.loadPlaylist(url, ua, referrer))
+                val playlist = HlsPlaylistParser.parse(url, HlsHttp.loadPlaylist(applicationContext, url, ua, referrer))
                 runOnUiThread {
                     if (closed) return@runOnUiThread
                     when (playlist) {
