@@ -9,3 +9,9 @@
 7. Never commit passwords, SSH keys, tokens, signing keys, private IP/host identifiers, or sensitive user data.
 
 **Scope:** ChatGPT can retrieve repository files on demand, but this file does not grant background execution and does not make chats automatically persist in Git.
+
+## Mandatory architecture-memory gate
+- Before structural design or implementation, read `docs/ARCHITECTURE_MEMORY.md` and `docs/FAILED_APPROACHES.md` alongside accepted engineering decisions, then verify current code/PR/CI.
+- Record every material failed, rejected or superseded architecture with exact hypothesis, what actually ran, evidence, known/unknown cause, replacement and reconsideration criteria in the same PR or linked follow-up issue.
+- Keep CONFIRMED_FAILURE, REJECTED_BY_DESIGN, SUPERSEDED and INCONCLUSIVE distinct; never invent test evidence.
+- Before merging an architecture-impacting change, state whether it revives a rejected approach and link the changed assumption, explicit decision and regressions. Do not run an Android build for documentation-only work.
